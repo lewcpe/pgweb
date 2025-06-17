@@ -1,8 +1,8 @@
 package auth
 
 import (
-	"backend/models"
-	"backend/store"
+	"pgweb-backend/models"
+	"pgweb-backend/store"
 	"context"
 	"crypto/rand"
 	"database/sql"

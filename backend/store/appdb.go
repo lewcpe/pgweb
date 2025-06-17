@@ -7,7 +7,7 @@ import (
 	"log"
 	"time"
 
-	"backend/models" // Assuming 'backend' is the module name
+	"pgweb-backend/models" // Assuming 'backend' is the module name
 
 	"github.com/google/uuid"
 	_ "github.com/lib/pq" // PostgreSQL driver

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"os"
 
-	"backend/auth" // Assuming 'backend' is the module name
+	"pgweb-backend/auth" // Assuming 'backend' is the module name
 
 	"github.com/gin-gonic/gin"
 )
