@@ -1,0 +1,71 @@
+issuer: http://dex:5556/dex # Internal Docker network URL for Dex
+
+storage:
+  type: memory # In-memory storage for simplicity in dev/test
+
+# Frontend application client
+staticClients:
+- id: pgweb-frontend
+  # The secret is referenced in the backend's environment variables (OIDC_CLIENT_SECRET)
+  secret: "your-client-secret" # Ensure this matches backend's OIDC_CLIENT_SECRET
+  name: 'PGWeb Frontend'
+  # The redirect URI should be the backend's OIDC callback endpoint
+  redirectURIs:
+  - 'http://localhost:8080/auth/oidc/callback' # User's browser accesses backend on localhost
+
+# Enable the "password" connector for static user credentials.
+# Dex can also be configured to use other connectors like GitHub, LDAP, etc.
+connectors:
+- type: mockCallback # 'mockCallback' is the simplest for testing, no actual login page
+  id: mock
+  name: Mock
+# Alternative using static passwords (more realistic for testing login flow)
+# connectors:
+# - type: local # 'local' type is what was intended for staticPassword
+#   id: staticPasswords
+#   name: Static Passwords
+#   config:
+#     # A static list of users and their passwords.
+#     # For a real deployment, you'd use a more secure connector.
+#     users:
+#     - email: "testuser@example.com"
+#       # bcrypt hash of "password"
+#       hash: "$2a$10$2b2u8CParMolecularGastronomy" # Placeholder hash
+#       username: "testuser"
+#       userID: "08a8684b-db88-4b73-90a9-3cd1661f5466" # Must be a UUID
+
+# Enable the gRPC API (not strictly needed for this basic setup but good practice)
+grpc:
+  addr: 0.0.0.0:5557
+
+# Enable the HTTP endpoints (login, keys, etc.)
+web:
+  http: 0.0.0.0:5556 # Dex listens on this address inside the container
+  # For external access via localhost:5556 (as per docker-compose port mapping)
+
+# Enable Prometheus metrics (optional)
+# metrics:
+#   addr: 0.0.0.0:5558
+
+# Enable OpenID Connect (OIDC) related features.
+oauth2:
+  skipApprovalScreen: true # Automatically approve scopes for known clients
+
+# What data should be included in the ID token.
+idTokens:
+  # Controls which claims are added to the ID token.
+  # By default, 'aud', 'exp', 'iat', 'iss', 'sub', 'at_hash', 'c_hash'.
+  # 'email' and 'groups' are often requested.
+  # Ensure 'email' and 'profile' scopes are requested by the client application
+  # if these claims are desired.
+  # We are using a mock connector which might not provide all these claims.
+  # When using staticPasswords or other connectors, ensure they provide these details.
+  # For now, this is more of a note for when real connectors are used.
+  # Default behavior is usually sufficient for 'sub' which is the primary user identifier.
+  # claims:
+  #   email: true
+  #   groups: true
+
+logger:
+  level: "debug" # Set to "info" or "error" for less verbose logging
+  format: "text" # or "json"

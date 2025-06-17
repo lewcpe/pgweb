@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16 # Or your preferred PostgreSQL version with pgvector
+    container_name: pgweb_postgres
+    environment:
+      POSTGRES_USER: admin_user # Admin user for the instance
+      POSTGRES_PASSWORD: admin_password
+      POSTGRES_DB: admin_db # Initial admin database
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgweb_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  dex:
+    image: ghcr.io/dexidp/dex:v2.30.0 # Use a specific version
+    container_name: pgweb_dex
+    ports:
+      - "5556:5556" # HTTP
+      - "5557:5557" # gRPC
+      - "5558:5558" # Metrics
+    volumes:
+      - ./dex_config.yml:/etc/dex/config.yml:ro # Mount Dex configuration
+    restart: unless-stopped
+    command: serve /etc/dex/config.yml # Added command to start Dex with the config
+
+  backend:
+    build:
+      context: ./backend # Assuming backend code is in a 'backend' subdirectory
+      dockerfile: Dockerfile
+    container_name: pgweb_backend
+    ports:
+      - "8080:8080"
+    environment:
+      # For connecting to PostgreSQL as admin to manage databases/users
+      PG_ADMIN_DSN: "postgres://admin_user:admin_password@postgres:5432/admin_db?sslmode=disable"
+      # For connecting to the application's own metadata tables (if separate or different user)
+      # APP_DB_DSN: "postgres://app_user:app_password@postgres:5432/app_metadata_db?sslmode=disable"
+      OIDC_ISSUER_URL: "http://dex:5556/dex" # Internal Docker network hostname
+      OIDC_CLIENT_ID: "pgweb-frontend"
+      OIDC_CLIENT_SECRET: "your-client-secret" # Should be a strong secret
+      GIN_MODE: "debug" # or "release"
+      # Other backend configs
+    depends_on:
+      - postgres
+      - dex
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend # Assuming frontend code is in a 'frontend' subdirectory
+      dockerfile: Dockerfile # Dockerfile for Vite/Svelte app
+    container_name: pgweb_frontend
+    ports:
+      - "5173:80"   # Host 5173 maps to Nginx container port 80
+                 # The frontend Dockerfile currently uses Nginx on port 80.
+                 # So this should map host 5173 to container 80 if using Nginx.
+    environment:
+      VITE_API_BASE_URL: "http://localhost:8080/api" # For calls from user's browser to backend
+      VITE_OIDC_LOGIN_URL: "http://localhost:8080/auth/oidc/login"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgweb_data:
