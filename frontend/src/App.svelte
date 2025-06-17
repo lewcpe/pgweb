@@ -4,6 +4,8 @@
   import Login from './routes/Login.svelte';
   import Dashboard from './routes/Dashboard.svelte';
   import DatabaseDetail from './routes/DatabaseDetail.svelte'; // Corrected path
+  import DatabaseList from './routes/DatabaseList.svelte';
+  import DatabaseCreateForm from './routes/DatabaseCreateForm.svelte'; // Added DatabaseCreateForm import
   import AuthCallback from './routes/AuthCallback.svelte';
   import { authStore, setAuthenticated, setUnauthenticated, type User } from './lib/authStore';
   import api from './lib/api';
@@ -85,6 +87,10 @@
       Component = Login;
     } else if (path === '/auth/callback') {
       Component = AuthCallback;
+    } else if (isAuthenticated && path === '/databases') {
+      Component = DatabaseList;
+    } else if (isAuthenticated && path === '/databases/new') { // Added route for DatabaseCreateForm
+      Component = DatabaseCreateForm;
     } else if (isAuthenticated && path.startsWith('/databases/')) {
       Component = DatabaseDetail;
     } else if (isAuthenticated && path === '/') {
@@ -132,8 +138,9 @@
       <nav>
         {#if isAuthenticated}
           <a href="/" on:click|preventDefault={() => navigate('/')}>Dashboard</a> |
+          <a href="/databases" on:click|preventDefault={() => navigate('/databases')}>Databases</a> |
           <span>Welcome, {currentUser?.username || 'User'}!</span> |
-          <a href="#" on:click|preventDefault={handleLogout}>Logout</a>
+          <button on:click|preventDefault={handleLogout} class="logout-button">Logout</button>
         {:else}
           <a href="/login" on:click|preventDefault={() => navigate('/login')}>Login</a>
         {/if}

@@ -1,6 +1,7 @@
 {
   "extends": "@tsconfig/svelte/tsconfig.json",
   "compilerOptions": {
+    "types": ["vite/client"], // Added vite/client types
     "target": "ESNext",
     "useDefineForClassFields": true,
     "module": "ESNext",
@@ -8,10 +9,12 @@
     "allowJs": true, // Allow JavaScript files to be imported
     "checkJs": true, // Type-check JavaScript files
     "isolatedModules": true,
+    "declaration": false, // Explicitly disable declaration emit
     "esModuleInterop": true, // Enables esModuleInterop for compatibility
     "forceConsistentCasingInFileNames": true,
     "strict": true, // Enable all strict type-checking options
     "skipLibCheck": true, // Skip type checking of declaration files
+    "noEmit": true, // Do not emit outputs
     "baseUrl": ".",
     "paths": {
       "$lib": ["src/lib"],

@@ -11,9 +11,14 @@
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^3.0.0",
+    "@tailwindcss/postcss": "^4.1.10",
     "@tsconfig/svelte": "^5.0.0",
-    "svelte": "^4.2.0",
+    "@types/node": "^20.0.0",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "svelte": "^4.2.20",
     "svelte-check": "^3.6.0",
+    "tailwindcss": "^4.1.10",
     "tslib": "^2.6.0",
     "typescript": "^5.2.0",
     "vite": "^5.0.0"
@@ -26,6 +31,7 @@
     "paneforge": "^0.0.3",
     "svelte-radix": "^1.1.0",
     "svelte-routing": "^2.13.0",
+    "svelte-table": "^0.6.4",
     "tailwind-merge": "^2.2.0",
     "tailwind-variants": "^0.2.0"
   }
