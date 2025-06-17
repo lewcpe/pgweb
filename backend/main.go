@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"os"
 
-	"backend/auth"
-	"backend/handlers" // This will now implicitly include pg_user_handlers if they are in the same package.
+        "pgweb-backend/auth"
+	"pgweb-backend/handlers" // This will now implicitly include pg_user_handlers if they are in the same package.
 	                   // If pg_user_handlers is in a sub-package of handlers, adjust import.
-	"backend/store"
+	"pgweb-backend/store"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
