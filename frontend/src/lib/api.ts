@@ -66,37 +66,23 @@ export default {
   getMe: () => request('GET', '/me'), // This will now use the real 'request' function
 
   // Database Management (can remain mocked if not part of this task's immediate scope)
-  listDatabases: () => {
-    console.warn("listDatabases is using mock data");
-    return Promise.resolve([
-      { database_id: 'sim1', pg_database_name: 'sim_db_1', status: 'active' },
-      { database_id: 'sim2', pg_database_name: 'sim_db_2', status: 'soft_deleted' },
-    ]);
-  },
-  createDatabase: (name: string) => {
-    console.warn("createDatabase is using mock data");
-    return Promise.resolve({ name, database_id: `sim_${Math.random().toString(36).substring(7)}`, status: 'pending_creation' });
-  },
-  getDatabaseDetails: (databaseId: string) => {
-    console.warn("getDatabaseDetails is using mock data");
-    return Promise.resolve({ database_id: databaseId, pg_database_name: `sim_db_${databaseId}`, status: 'active' });
-  },
+  listDatabases: () => request('GET', '/databases'),
+
+  createDatabase: (name: string) => request('POST', '/databases', { name }),
+
+  getDatabaseDetails: (databaseId: string) => request('GET', `/databases/${databaseId}`),
+
   deleteDatabase: (databaseId: string) => {
     console.warn("deleteDatabase is using mock data");
     return Promise.resolve({ message: `DELETE to /databases/${databaseId} simulated successfully`});
   },
 
-  // PostgreSQL User Management (can remain mocked)
-  listPGUsers: (databaseId: string) => {
-    console.warn("listPGUsers is using mock data");
-    return Promise.resolve([
-      { pg_user_id: 'sim_pguser1', pg_username: 'sim_reader', permission_level: 'read' },
-    ]);
-  },
-  createPGUser: (databaseId: string, username: string, permissionLevel: string) => {
-    console.warn("createPGUser is using mock data");
-    return Promise.resolve({ username, permission_level: permissionLevel, pg_user_id: 'sim_pguser_new' });
-  },
+  // PostgreSQL User Management
+  listPGUsers: (databaseId: string) => request('GET', `/databases/${databaseId}/pgusers`),
+
+  createPGUser: (databaseId: string, username: string, permission_level: 'read' | 'write') =>
+    request('POST', `/databases/${databaseId}/pgusers`, { username, permission_level }),
+
   regeneratePGUserPassword: (databaseId: string, pgUserId: string) => {
     console.warn("regeneratePGUserPassword is using mock data");
     return Promise.resolve({ message: "Password regenerated (mocked)." });

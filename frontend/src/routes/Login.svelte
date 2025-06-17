@@ -1,6 +1,4 @@
 <script lang="ts">
-  export let navigate: (path: string) => void;
-
   const oidcLoginUrl = import.meta.env.VITE_OIDC_LOGIN_URL || 'http://localhost:8080/auth/oidc/login';
 
   function handleLogin() {
