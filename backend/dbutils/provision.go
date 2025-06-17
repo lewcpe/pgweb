@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"backend/models" // To use models.ManagedPGUser
+	"pgweb-backend/models" // To use models.ManagedPGUser
 
 	_ "github.com/lib/pq" // PostgreSQL driver
 )

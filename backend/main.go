@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"os"
 
-	"backend/auth"
-	"backend/handlers" // This will now implicitly include pg_user_handlers if they are in the same package.
-	                   // If pg_user_handlers is in a sub-package of handlers, adjust import.
-	"backend/store"
+	"pgweb-backend/auth"
+	"pgweb-backend/handlers" // This will now implicitly include pg_user_handlers if they are in the same package.
+	                         // If pg_user_handlers is in a sub-package of handlers, adjust import.
+	"pgweb-backend/store"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
@@ -54,7 +54,7 @@ func main() {
 	cookieStore.Options(sessions.Options{
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   r.Mode() == gin.ReleaseMode, // Secure cookies in production
+		Secure:   gin.Mode() == gin.ReleaseMode, // Secure cookies in production
 		MaxAge:   86400 * 7,                   // 7 days
 		SameSite: http.SameSiteLaxMode,
 	})

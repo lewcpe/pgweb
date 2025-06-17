@@ -1,10 +1,11 @@
 package handlers
 
 import (
-	"backend/auth"
-	"backend/dbutils"
-	"backend/models"
-	"backend/store"
+	"pgweb-backend/auth"
+	"pgweb-backend/dbutils"
+	"pgweb-backend/models"
+	"pgweb-backend/store"
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
