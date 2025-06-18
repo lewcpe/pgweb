@@ -144,3 +144,11 @@ Cypress.Commands.add('createTestDatabase', (dbName, token) => {
 Cypress.Commands.add('deleteTestDatabase', (dbId, token) => {
   return cy.apiRequest('DELETE', `/api/databases/${dbId}`, null, token)
 })
+
+// Custom command to create a test PostgreSQL user
+Cypress.Commands.add('createTestUser', (dbId, username, permissionLevel = 'read') => {
+  return cy.apiRequest('POST', `/api/databases/${dbId}/pgusers`, {
+    username: username,
+    permission_level: permissionLevel
+  })
+})

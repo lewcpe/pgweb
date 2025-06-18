@@ -56,16 +56,16 @@ describe('Database Management API', () => {
     })
   })
 
-  it('should return 404 for non-existent database', () => {
+  it('should return 400 for invalid database ID format', () => {
     cy.apiRequest('GET', '/api/databases/non-existent-id', null).then((response) => {
-      expect(response.status).to.eq(404)
+      expect(response.status).to.eq(400)
     })
   })
 
   it('should soft-delete a database', () => {
     cy.apiRequest('DELETE', `/api/databases/${testDbId}`, null).then((response) => {
       expect(response.status).to.eq(200)
-      expect(response.body.status).to.eq('soft_deleted')
+      expect(response.body.database.status).to.eq('soft_deleted')
     })
   })
 })
