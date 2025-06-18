@@ -170,19 +170,19 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 	}
 	defer newDB.Close()
 
-	log.Printf("Creating pgvector extension in database %s", safeDBName)
-	_, err = newDB.Exec("CREATE EXTENSION IF NOT EXISTS pgvector")
+	log.Printf("Creating vector extension in database %s", safeDBName)
+	_, err = newDB.Exec("CREATE EXTENSION IF NOT EXISTS vector")
 	if err != nil {
-		log.Printf("Failed to create pgvector extension in %s. Attempting to drop it. Error: %v", safeDBName, err)
+		log.Printf("Failed to create vector extension in %s. Attempting to drop it. Error: %v", safeDBName, err)
 		_, dropErr := adminDB.Exec(fmt.Sprintf("DROP DATABASE %s", safeDBName)) // Sanitize again
 		if dropErr != nil {
 			log.Printf("CRITICAL: Failed to create extension AND failed to drop DB: %v. Manual cleanup for %s.", dropErr, safeDBName)
 		} else {
 			log.Printf("Successfully dropped database %s after failing to create extension.", safeDBName)
 		}
-		return fmt.Errorf("failed to create pgvector extension in database '%s': %w", safeDBName, err)
+		return fmt.Errorf("failed to create vector extension in database '%s': %w", safeDBName, err)
 	}
-	log.Printf("pgvector extension created successfully in %s.", safeDBName)
+	log.Printf("vector extension created successfully in %s.", safeDBName)
 	return nil
 }
 

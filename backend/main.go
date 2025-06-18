@@ -43,6 +43,10 @@ func main() {
 	if err := store.InitAppDB(appDbDsn); err != nil {
 		log.Fatalf("Failed to initialize application database: %v", err)
 	}
+	// Ensure managed_databases table exists
+	if err := store.CreateManagedDatabasesTable(appDbDsn); err != nil {
+		log.Fatalf("Failed to ensure managed_databases table exists: %v", err)
+	}
 	// Consider defer store.AppDB.Close() for graceful shutdown
 
 	r := gin.Default()
