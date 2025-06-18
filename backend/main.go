@@ -7,8 +7,6 @@ import (
 
 	"pgweb-backend/auth"
 	"pgweb-backend/handlers" // This will now implicitly include pg_user_handlers if they are in the same package.
-
-	// If pg_user_handlers is in a sub-package of handlers, adjust import.
 	"pgweb-backend/store"
 
 	"github.com/gin-contrib/sessions"
@@ -33,6 +31,9 @@ func main() {
 	if err := auth.InitOIDCProvider(); err != nil {
 		log.Printf("Failed to initialize OIDC provider: %v. Auth functionality may be limited.", err)
 	}
+
+	// Initialize trusted header authentication
+	auth.InitTrustedHeaderAuth()
 
 	// Initialize Application Database connection
 	appDbDsn := os.Getenv("APP_DB_DSN")
@@ -82,9 +83,10 @@ func main() {
 		authGroup.POST("/logout", handlers.LogoutHandler)
 	}
 
-	// API routes - protected by OIDC token validation (session check)
+	// API routes - protected by authentication middleware
 	apiProtected := r.Group("/api")
-	apiProtected.Use(auth.OIDCTokenValidationMiddleware())
+	// Apply trusted header auth first, then OIDC session validation
+	apiProtected.Use(auth.TrustedHeaderAuthMiddleware(), auth.OIDCTokenValidationMiddleware())
 	{
 		// User profile
 		apiProtected.GET("/me", handlers.MeHandler)

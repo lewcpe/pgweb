@@ -35,6 +35,36 @@ func InitAppDB(dataSourceName string) error {
 		return fmt.Errorf("failed to ping database: %w", err)
 	}
 	log.Println("Successfully connected to the application database.")
+	// Ensure application_users table exists after successful connection
+	if err := CreateApplicationUsersTable(dataSourceName); err != nil {
+		return fmt.Errorf("failed to ensure application_users table exists: %w", err)
+	}
+	return nil
+}
+
+// CreateApplicationUsersTable creates the application_users table if it doesn't exist.
+func CreateApplicationUsersTable(appDbDSN string) error {
+	log.Println("Attempting to create application_users table if not exists...")
+	db, err := sql.Open("postgres", appDbDSN)
+	if err != nil {
+		return fmt.Errorf("failed to open database connection to create users table: %w", err)
+	}
+	defer db.Close()
+
+	createTableSQL := `
+CREATE TABLE IF NOT EXISTS application_users (
+	internal_user_id UUID PRIMARY KEY,
+	oidc_sub TEXT UNIQUE,
+	email TEXT UNIQUE NOT NULL,
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+);`
+
+	_, err = db.Exec(createTableSQL)
+	if err != nil {
+		return fmt.Errorf("failed to create application_users table: %w", err)
+	}
+	log.Println("application_users table ensured to exist.")
 	return nil
 }
 
@@ -55,6 +85,25 @@ func GetApplicationUserByOIDCSub(oidcSub string) (*models.ApplicationUser, error
 			return nil, sql.ErrNoRows
 		}
 		return nil, fmt.Errorf("error querying application user by oidc_sub %s: %w", oidcSub, err)
+	}
+	return user, nil
+}
+
+func GetApplicationUserByEmail(email string) (*models.ApplicationUser, error) {
+	if AppDB == nil {
+		return nil, errors.New("database not initialized")
+	}
+	if email == "" {
+		return nil, errors.New("email must be provided")
+	}
+	query := `SELECT internal_user_id, oidc_sub, email, created_at, updated_at FROM application_users WHERE email = $1`
+	user := &models.ApplicationUser{}
+	err := AppDB.QueryRow(query, email).Scan(&user.InternalUserID, &user.OIDCSub, &user.Email, &user.CreatedAt, &user.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, sql.ErrNoRows
+		}
+		return nil, fmt.Errorf("error querying application user by email %s: %w", email, err)
 	}
 	return user, nil
 }
@@ -222,7 +271,6 @@ func GetManagedPGUsersByDatabaseIDAndOwner(databaseID uuid.UUID, ownerUserID uui
 	return GetManagedPGUsersByDatabaseID(databaseID)
 }
 
-
 // GetManagedPGUserByID retrieves a specific PG user by its ID, ensuring the requester owns the parent database.
 func GetManagedPGUserByID(pgUserID uuid.UUID, ownerUserID uuid.UUID) (*models.ManagedPGUser, error) {
 	if AppDB == nil {
@@ -247,7 +295,6 @@ func GetManagedPGUserByID(pgUserID uuid.UUID, ownerUserID uuid.UUID) (*models.Ma
 	}
 	return pgUser, nil
 }
-
 
 // CheckIfPGUsernameExistsInDB checks if a PostgreSQL username already exists within a specific managed database.
 func CheckIfPGUsernameExistsInDB(databaseID uuid.UUID, pgUsername string) (bool, error) {

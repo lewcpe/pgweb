@@ -1,8 +1,6 @@
 package auth
 
 import (
-	"pgweb-backend/models"
-	"pgweb-backend/store"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -12,7 +10,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"pgweb-backend/models"
+	"pgweb-backend/store"
 	"time"
+
+	"encoding/gob"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-contrib/sessions"
@@ -25,7 +27,7 @@ const (
 	oidcStateKey         = "oidc_state"
 	oidcNonceKey         = "oidc_nonce"
 	userSessionKey       = "user"
-	sessionName          = "mysession" // Should match the name used in sessions.Sessions middleware
+	sessionName          = "mysession"  // Should match the name used in sessions.Sessions middleware
 	frontendDashboardURL = "/dashboard" // Configurable: could be from env var
 )
 
@@ -42,6 +44,11 @@ type UserSessionInfo struct {
 	Email          string    `json:"email"`
 }
 
+func init() {
+	// Register UserSessionInfo for gob encoding/decoding in sessions
+	gob.Register(UserSessionInfo{})
+}
+
 // InitOIDCProvider initializes the OIDC provider and OAuth2 configuration.
 func InitOIDCProvider() error {
 	issuerURL := os.Getenv("OIDC_ISSUER_URL")
@@ -54,9 +61,21 @@ func InitOIDCProvider() error {
 	}
 
 	var err error
-	oidcProvider, err = oidc.NewProvider(context.Background(), issuerURL)
+	maxRetries := 10
+	retryInterval := 5 * time.Second
+
+	for i := 0; i < maxRetries; i++ {
+		oidcProvider, err = oidc.NewProvider(context.Background(), issuerURL)
+		if err == nil {
+			log.Printf("OIDC provider initialized successfully after %d attempts.\n", i+1)
+			break
+		}
+		log.Printf("Failed to initialize OIDC provider (attempt %d/%d): %v. Retrying in %v...\n", i+1, maxRetries, err, retryInterval)
+		time.Sleep(retryInterval)
+	}
+
 	if err != nil {
-		return fmt.Errorf("failed to initialize OIDC provider: %w", err)
+		return fmt.Errorf("failed to initialize OIDC provider after multiple retries: %w", err)
 	}
 
 	oauth2Config = &oauth2.Config{
@@ -111,7 +130,6 @@ func InitiateOIDCLogin(c *gin.Context) {
 	}
 	log.Printf("OIDC Initiate: state=%s, nonce=%s stored in session\n", state, nonce)
 
-
 	redirectURL := oauth2Config.AuthCodeURL(state, oidc.Nonce(nonce))
 	c.Redirect(http.StatusFound, redirectURL)
 }
@@ -131,7 +149,6 @@ func HandleOIDCCallback(c *gin.Context) {
 	}
 	log.Printf("OIDC Callback: queryState=%s, sessionState=%s\n", queryState, sessionState)
 
-
 	if queryState != sessionState {
 		log.Println("Error: OIDC state mismatch")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid OIDC state"})
@@ -139,7 +156,6 @@ func HandleOIDCCallback(c *gin.Context) {
 	}
 	// Clear state and nonce from session after use
 	ClearSessionValue(c, oidcStateKey)
-
 
 	// 2. Exchange code for token
 	ctx := oidc.ClientContext(context.Background(), http.DefaultClient) // Use context with HTTP client

@@ -6,9 +6,10 @@ describe('PostgreSQL User Management API', () => {
   let authToken
 
   before(() => {
-    // Login and get token
-    cy.login().then(() => {
-      // Get session token from cookies
+    // Login and get token using trustedHeader method
+    cy.login('trustedHeader').then(() => {
+      // For trustedHeader auth, the session cookie is set directly by the backend
+      // No need to explicitly get it from Dex
       return cy.getCookie('session').then((cookie) => {
         authToken = cookie.value
 

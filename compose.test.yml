@@ -17,10 +17,10 @@ services:
       retries: 10
 
   dex:
-    image: ghcr.io/dexidp/dex:v2.30.0
+    image: ghcr.io/dexidp/dex:latest-distroless
     container_name: pgweb_test_dex
     volumes:
-      - ./dex_config.test.yml:/etc/dex/config.yml:ro
+      - ./dex_config.test.yml:/etc/dex/config.docker.yaml:ro
     ports:
       - "5556:5556"
     depends_on:
@@ -37,10 +37,11 @@ services:
       OIDC_ISSUER_URL: "http://dex:5556/dex"
       OIDC_CLIENT_ID: "test-client"
       OIDC_CLIENT_SECRET: "test-secret"
-      OIDC_REDIRECT_URL: "http://backend:8080/auth/callback"
+      OIDC_REDIRECT_URL: "http://backend:8080/auth/oidc/callback"
       APP_DB_DSN: "postgres://test_admin:test_password@postgres:5432/test_admin_db?sslmode=disable"
       GIN_MODE: "release"
       SESSION_SECRET_KEY: "test-session-secret"
+      PGWEB_TRUSTED_HEADER: "X-Forwarded-Email" # Add this line
     ports:
       - "8080:8080"
     depends_on:
