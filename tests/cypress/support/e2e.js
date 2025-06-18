@@ -19,6 +19,11 @@ Cypress.Commands.add('apiRequest', (method, endpoint, body = null, token = null)
     failOnStatusCode: false
   }
 
+  // Add X-Forwarded-Email header if available from trusted header login
+  if (Cypress.env('X-Forwarded-Email')) {
+    options.headers['X-Forwarded-Email'] = Cypress.env('X-Forwarded-Email');
+  }
+
   if (body) options.body = body
   if (token) options.headers.Authorization = `Bearer ${token}`
 
@@ -121,6 +126,7 @@ Cypress.Commands.add('login', (method = 'oidc') => {
       if (response.status !== 200) {
         throw new Error(`Trusted header login failed with status: ${response.status}`);
       }
+      Cypress.env('X-Forwarded-Email', 'test@example.com'); // Store email for subsequent requests
       cy.log('Trusted header login successful.');
       return cy.wrap(response);
     });
