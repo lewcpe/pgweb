@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"time"
+	"crypto/sha256"
 
 	"pgweb-backend/models"
 	"pgweb-backend/store"
