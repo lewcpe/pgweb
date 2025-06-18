@@ -123,7 +123,7 @@ Cypress.Commands.add('login', (method = 'oidc') => {
         throw new Error(`Trusted header login failed with status: ${response.status}`);
       }
       cy.log('Trusted header login successful.');
-      return response;
+      return cy.wrap(response);
     });
   } else {
     throw new Error(`Unsupported login method: ${method}`);

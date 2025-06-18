@@ -7,16 +7,12 @@ describe('Database Management API', () => {
     // Login and get token using trustedHeader method
     cy.login('trustedHeader').then(() => {
       // For trustedHeader auth, the session cookie is set directly by the backend
-      // No need to explicitly get it from Dex
-      cy.getCookie('session').then((cookie) => {
-        authToken = cookie.value
-
-        // Create a test database to use in our tests
-        cy.createTestDatabase(testDbName, authToken).then((response) => {
-          if (response.status === 201) {
-            testDbId = response.body.database_id
-          }
-        })
+      // No need to explicitly get it from Dex or pass authToken
+      // Create a test database to use in our tests
+      cy.createTestDatabase(testDbName).then((response) => {
+        if (response.status === 201) {
+          testDbId = response.body.database_id
+        }
       })
     })
   })
@@ -24,13 +20,13 @@ describe('Database Management API', () => {
   after(() => {
     // Clean up test database
     if (testDbId) {
-      cy.deleteTestDatabase(testDbId, authToken)
+      cy.deleteTestDatabase(testDbId)
     }
   })
 
   it('should create a new database', () => {
     const dbName = `newdb_${Date.now()}`
-    cy.apiRequest('POST', '/api/databases', { name: dbName }, authToken).then((response) => {
+    cy.apiRequest('POST', '/api/databases', { name: dbName }).then((response) => {
       expect(response.status).to.eq(201)
       expect(response.body).to.have.property('database_id')
       expect(response.body.pg_database_name).to.eq(dbName)
@@ -39,13 +35,13 @@ describe('Database Management API', () => {
   })
 
   it('should return 400 for invalid database name', () => {
-    cy.apiRequest('POST', '/api/databases', { name: 'invalid name!' }, authToken).then((response) => {
+    cy.apiRequest('POST', '/api/databases', { name: 'invalid name!' }).then((response) => {
       expect(response.status).to.eq(400)
     })
   })
 
   it('should list databases', () => {
-    cy.apiRequest('GET', '/api/databases', null, authToken).then((response) => {
+    cy.apiRequest('GET', '/api/databases', null).then((response) => {
       expect(response.status).to.eq(200)
       expect(response.body).to.be.an('array')
       expect(response.body.some(db => db.database_id === testDbId)).to.be.true
@@ -53,7 +49,7 @@ describe('Database Management API', () => {
   })
 
   it('should get database details', () => {
-    cy.apiRequest('GET', `/api/databases/${testDbId}`, null, authToken).then((response) => {
+    cy.apiRequest('GET', `/api/databases/${testDbId}`, null).then((response) => {
       expect(response.status).to.eq(200)
       expect(response.body.database_id).to.eq(testDbId)
       expect(response.body.pg_database_name).to.eq(testDbName)
@@ -61,13 +57,13 @@ describe('Database Management API', () => {
   })
 
   it('should return 404 for non-existent database', () => {
-    cy.apiRequest('GET', '/api/databases/non-existent-id', null, authToken).then((response) => {
+    cy.apiRequest('GET', '/api/databases/non-existent-id', null).then((response) => {
       expect(response.status).to.eq(404)
     })
   })
 
   it('should soft-delete a database', () => {
-    cy.apiRequest('DELETE', `/api/databases/${testDbId}`, null, authToken).then((response) => {
+    cy.apiRequest('DELETE', `/api/databases/${testDbId}`, null).then((response) => {
       expect(response.status).to.eq(200)
       expect(response.body.status).to.eq('soft_deleted')
     })
