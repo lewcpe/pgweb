@@ -7,7 +7,8 @@ import (
 
 	"pgweb-backend/auth"
 	"pgweb-backend/handlers" // This will now implicitly include pg_user_handlers if they are in the same package.
-	                         // If pg_user_handlers is in a sub-package of handlers, adjust import.
+
+	// If pg_user_handlers is in a sub-package of handlers, adjust import.
 	"pgweb-backend/store"
 
 	"github.com/gin-contrib/sessions"
@@ -45,6 +46,9 @@ func main() {
 
 	r := gin.Default()
 
+	// Health check endpoint (public)
+	r.GET("/health", healthHandler)
+
 	// Configure session store
 	sessionSecretKey := os.Getenv("SESSION_SECRET_KEY")
 	if sessionSecretKey == "" {
@@ -55,7 +59,7 @@ func main() {
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   gin.Mode() == gin.ReleaseMode, // Secure cookies in production
-		MaxAge:   86400 * 7,                   // 7 days
+		MaxAge:   86400 * 7,                     // 7 days
 		SameSite: http.SameSiteLaxMode,
 	})
 	r.Use(sessions.Sessions(sessionName, cookieStore))

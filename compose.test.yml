@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: pgweb_test_postgres
+    environment:
+      POSTGRES_USER: test_admin
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_admin_db
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_admin -d test_admin_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  dex:
+    image: ghcr.io/dexidp/dex:v2.30.0
+    container_name: pgweb_test_dex
+    volumes:
+      - ./dex_config.test.yml:/etc/dex/config.yml:ro
+    ports:
+      - "5556:5556"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pgweb_test_backend
+    environment:
+      PG_ADMIN_DSN: "postgres://test_admin:test_password@postgres:5432/test_admin_db?sslmode=disable"
+      OIDC_ISSUER_URL: "http://dex:5556/dex"
+      OIDC_CLIENT_ID: "test-client"
+      OIDC_CLIENT_SECRET: "test-secret"
+      OIDC_REDIRECT_URL: "http://backend:8080/auth/callback"
+      APP_DB_DSN: "postgres://test_admin:test_password@postgres:5432/test_admin_db?sslmode=disable"
+      GIN_MODE: "release"
+      SESSION_SECRET_KEY: "test-session-secret"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      dex:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  cypress:
+    image: cypress/included:12.17.0
+    container_name: pgweb_test_cypress
+    environment:
+      CYPRESS_BASE_URL: "http://backend:8080"
+    working_dir: /e2e
+    volumes:
+      - ./tests/:/e2e
+    depends_on:
+      backend:
+        condition: service_healthy
+    command: --config-file cypress.config.js
+    
