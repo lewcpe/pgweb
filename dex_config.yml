@@ -13,26 +13,12 @@ staticClients:
   redirectURIs:
   - 'http://localhost:8080/auth/oidc/callback' # User's browser accesses backend on localhost
 
-# Enable the "password" connector for static user credentials.
-# Dex can also be configured to use other connectors like GitHub, LDAP, etc.
-connectors:
-- type: mockCallback # 'mockCallback' is the simplest for testing, no actual login page
-  id: mock
-  name: Mock
-# Alternative using static passwords (more realistic for testing login flow)
-# connectors:
-# - type: local # 'local' type is what was intended for staticPassword
-#   id: staticPasswords
-#   name: Static Passwords
-#   config:
-#     # A static list of users and their passwords.
-#     # For a real deployment, you'd use a more secure connector.
-#     users:
-#     - email: "testuser@example.com"
-#       # bcrypt hash of "password"
-#       hash: "$2a$10$2b2u8CParMolecularGastronomy" # Placeholder hash
-#       username: "testuser"
-#       userID: "08a8684b-db88-4b73-90a9-3cd1661f5466" # Must be a UUID
+enablePasswordDB: true
+staticPasswords:
+- email: "test@example.com"
+  password: "testpassword"
+  hash: "$2y$10$BTkzGSyJvpf0.BAk3V6pjuv8yI9WmAWJw89kXj9wC14kMyhkv/Fca"
+  username: "testuser"
 
 # Enable the gRPC API (not strictly needed for this basic setup but good practice)
 grpc:

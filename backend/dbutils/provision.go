@@ -18,7 +18,7 @@ import (
 var (
 	safeIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 	// Character set for password generation
-	passwordChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
+	passwordChars  = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
 	passwordLength = 16
 )
 
@@ -26,8 +26,8 @@ var (
 func sanitizeIdentifier(name string) (string, error) {
 	name = strings.ToLower(name)
 	// Replace common problematic characters first
-    name = strings.ReplaceAll(name, "-", "_")
-    name = strings.ReplaceAll(name, " ", "_")
+	name = strings.ReplaceAll(name, "-", "_")
+	name = strings.ReplaceAll(name, " ", "_")
 
 	var sb strings.Builder
 	for _, r := range name {
@@ -51,12 +51,11 @@ func sanitizeIdentifier(name string) (string, error) {
 	}
 	name = strings.TrimRight(name, "_")
 	if len(name) == 0 { // Re-check after potential trim
-        return "", fmt.Errorf("sanitized name became empty after trimming trailing underscores")
-    }
-    if !(name[0] >= 'a' && name[0] <= 'z') { // Re-check start char
-         return "", fmt.Errorf("sanitized name '%s' does not start with a letter after processing", name)
-    }
-
+		return "", fmt.Errorf("sanitized name became empty after trimming trailing underscores")
+	}
+	if !(name[0] >= 'a' && name[0] <= 'z') { // Re-check start char
+		return "", fmt.Errorf("sanitized name '%s' does not start with a letter after processing", name)
+	}
 
 	if !safeIdentifierPattern.MatchString(name) {
 		return "", fmt.Errorf("sanitized name '%s' does not match safe identifier pattern ^[a-z][a-z0-9_]*$", name)
@@ -83,7 +82,6 @@ func generateStrongPassword(length int) (string, error) {
 	}
 	return string(result), nil
 }
-
 
 func connectToDB(dsn string) (*sql.DB, error) {
 	db, err := sql.Open("postgres", dsn)
@@ -119,7 +117,6 @@ func getSpecificDatabaseDSN(generalDSN, dbName string) string {
 	}
 	return specificDSN
 }
-
 
 // CreatePostgresDatabase creates a new database and enables pgvector extension.
 func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
@@ -189,6 +186,32 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 	return nil
 }
 
+// CreateApplicationUsersTable creates the application_users table if it doesn't exist.
+func CreateApplicationUsersTable(appDbDSN string) error {
+	log.Println("Attempting to create application_users table if not exists...")
+	db, err := connectToDB(appDbDSN)
+	if err != nil {
+		return fmt.Errorf("failed to connect to application database to create users table: %w", err)
+	}
+	defer db.Close()
+
+	createTableSQL := `
+	CREATE TABLE IF NOT EXISTS application_users (
+		internal_user_id UUID PRIMARY KEY,
+		oidc_sub TEXT UNIQUE,
+		email TEXT UNIQUE NOT NULL,
+		created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+		updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+	);`
+
+	_, err = db.Exec(createTableSQL)
+	if err != nil {
+		return fmt.Errorf("failed to create application_users table: %w", err)
+	}
+	log.Println("application_users table ensured to exist.")
+	return nil
+}
+
 // CreatePostgresUser creates a new PostgreSQL user with specified permissions.
 func CreatePostgresUser(pgAdminDSN, targetDbName, pgUserName, permissionLevel string) (string, error) {
 	log.Printf("Attempting to create user %s for database %s with permission %s", pgUserName, targetDbName, permissionLevel)
@@ -237,26 +260,33 @@ func CreatePostgresUser(pgAdminDSN, targetDbName, pgUserName, permissionLevel st
 	case "read":
 		grantSelectSQL := fmt.Sprintf("GRANT SELECT ON ALL TABLES IN SCHEMA public TO %s", safePgUserName)
 		_, err = db.Exec(grantSelectSQL)
-		if err != nil { log.Printf("Warning: failed to grant SELECT for user %s: %v", safePgUserName, err) }
+		if err != nil {
+			log.Printf("Warning: failed to grant SELECT for user %s: %v", safePgUserName, err)
+		}
 
 		alterDefaultSelectSQL := fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO %s", safePgUserName)
 		_, err = db.Exec(alterDefaultSelectSQL)
-		if err != nil { log.Printf("Warning: failed to alter default SELECT privileges for user %s: %v", safePgUserName, err) }
+		if err != nil {
+			log.Printf("Warning: failed to alter default SELECT privileges for user %s: %v", safePgUserName, err)
+		}
 	case "write":
 		grantDMLSQL := fmt.Sprintf("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %s", safePgUserName)
 		_, err = db.Exec(grantDMLSQL)
-		if err != nil { log.Printf("Warning: failed to grant DML for user %s: %v", safePgUserName, err) }
+		if err != nil {
+			log.Printf("Warning: failed to grant DML for user %s: %v", safePgUserName, err)
+		}
 
 		alterDefaultDMLSQL := fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %s", safePgUserName)
 		_, err = db.Exec(alterDefaultDMLSQL)
-		if err != nil { log.Printf("Warning: failed to alter default DML privileges for user %s: %v", safePgUserName, err) }
+		if err != nil {
+			log.Printf("Warning: failed to alter default DML privileges for user %s: %v", safePgUserName, err)
+		}
 	default:
 		return "", fmt.Errorf("invalid permission level: %s. Must be 'read' or 'write'", permissionLevel)
 	}
 	log.Printf("Permissions granted for user %s on database %s with level %s.", safePgUserName, targetDbName, permissionLevel)
 	return generatedPassword, nil
 }
-
 
 // RegeneratePostgresUserPassword generates a new password for a PostgreSQL user.
 func RegeneratePostgresUserPassword(pgAdminDSN, targetDbName, pgUserName string) (string, error) {
@@ -287,7 +317,6 @@ func RegeneratePostgresUserPassword(pgAdminDSN, targetDbName, pgUserName string)
 	log.Printf("Password regenerated successfully for user %s on database %s.", safePgUserName, targetDbName)
 	return newGeneratedPassword, nil
 }
-
 
 // SoftDeletePostgresDatabase revokes user privileges on a database.
 func SoftDeletePostgresDatabase(pgAdminDSN, dbName string, pgUsers []models.ManagedPGUser) error {

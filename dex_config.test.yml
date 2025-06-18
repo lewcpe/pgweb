@@ -1,4 +1,4 @@
-issuer: http://127.0.0.1:5556/dex
+issuer: http://dex:5556/dex
 storage:
   type: postgres
   config:
@@ -21,10 +21,11 @@ staticClients:
   secret: test-secret
   name: 'Test Client'
   redirectURIs:
-  - 'http://localhost:8080/auth/callback'
+  - 'http://backend:8080/auth/oidc/callback'
 
 enablePasswordDB: true
 staticPasswords:
 - email: "test@example.com"
   password: "testpassword"
+  hash: "$2y$10$BTkzGSyJvpf0.BAk3V6pjuv8yI9WmAWJw89kXj9wC14kMyhkv/Fca"
   username: "testuser"

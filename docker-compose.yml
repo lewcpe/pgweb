@@ -15,16 +15,15 @@ services:
     restart: unless-stopped
 
   dex:
-    image: ghcr.io/dexidp/dex:v2.30.0 # Use a specific version
+    image: ghcr.io/dexidp/dex:latest-distroless
     container_name: pgweb_dex
     ports:
       - "5556:5556" # HTTP
       - "5557:5557" # gRPC
       - "5558:5558" # Metrics
     volumes:
-      - ./dex_config.yml:/etc/dex/config.yml:ro # Mount Dex configuration
+      - ./dex_config.yml:/etc/dex/config.docker.yaml:ro
     restart: unless-stopped
-    command: serve /etc/dex/config.yml # Added command to start Dex with the config
 
   backend:
     build:
@@ -41,8 +40,10 @@ services:
       OIDC_ISSUER_URL: "http://dex:5556/dex" # Internal Docker network hostname
       OIDC_CLIENT_ID: "pgweb-frontend"
       OIDC_CLIENT_SECRET: "your-client-secret" # Should be a strong secret
+      OIDC_REDIRECT_URL: "http://localhost:8080/auth/callback"
       GIN_MODE: "debug" # or "release"
-      # Other backend configs
+      APP_DB_DSN: "postgres://admin_user:admin_password@postgres:5432/admin_db?sslmode=disable"
+      SESSION_SECRET_KEY: "local-session-secret"
     depends_on:
       - postgres
       - dex
