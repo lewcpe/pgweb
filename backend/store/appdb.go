@@ -95,6 +95,39 @@ CREATE TABLE IF NOT EXISTS managed_databases (
 	return nil
 }
 
+// CreateManagedPgUsersTable creates the managed_pg_users table if it doesn't exist.
+func CreateManagedPgUsersTable(appDbDSN string) error {
+	log.Println("Attempting to create managed_pg_users table if not exists...")
+	db, err := sql.Open("postgres", appDbDSN)
+	if err != nil {
+		return fmt.Errorf("failed to open database connection to create managed PG users table: %w", err)
+	}
+	defer db.Close()
+
+	createTableSQL := `
+CREATE TABLE IF NOT EXISTS managed_pg_users (
+	pg_user_id UUID PRIMARY KEY,
+	managed_database_id UUID NOT NULL,
+	pg_username TEXT NOT NULL,
+	permission_level TEXT NOT NULL,
+	status TEXT NOT NULL,
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	CONSTRAINT fk_managed_database
+		FOREIGN KEY(managed_database_id)
+		REFERENCES managed_databases(database_id)
+		ON DELETE CASCADE,
+	UNIQUE (managed_database_id, pg_username)
+);`
+
+	_, err = db.Exec(createTableSQL)
+	if err != nil {
+		return fmt.Errorf("failed to create managed_pg_users table: %w", err)
+	}
+	log.Println("managed_pg_users table ensured to exist.")
+	return nil
+}
+
 // --- ApplicationUser CRUD ---
 
 func GetApplicationUserByOIDCSub(oidcSub string) (*models.ApplicationUser, error) {

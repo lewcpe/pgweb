@@ -12,7 +12,7 @@ import (
 
 	"pgweb-backend/models" // To use models.ManagedPGUser
 
-	_ "github.com/lib/pq" // PostgreSQL driver
+	pq "github.com/lib/pq" // PostgreSQL driver
 )
 
 var (
@@ -236,8 +236,11 @@ func CreatePostgresUser(pgAdminDSN, targetDbName, pgUserName, permissionLevel st
 
 	// Use parameterized queries where possible, but identifiers and keywords often require fmt.Sprintf.
 	// Ensure safePgUserName is thoroughly sanitized. Passwords should always be parameterized.
-	createUserSQL := fmt.Sprintf("CREATE USER %s WITH PASSWORD $1", safePgUserName)
-	_, err = db.Exec(createUserSQL, generatedPassword)
+	// Passwords should be quoted as literals in CREATE USER statements.
+	// The pq driver's QuoteLiteral function handles proper escaping.
+	quotedPassword := pq.QuoteLiteral(generatedPassword)
+	createUserSQL := fmt.Sprintf("CREATE USER %s WITH PASSWORD %s", safePgUserName, quotedPassword)
+	_, err = db.Exec(createUserSQL)
 	if err != nil {
 		return "", fmt.Errorf("failed to create user %s: %w", safePgUserName, err)
 	}
