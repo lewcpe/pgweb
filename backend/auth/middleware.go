@@ -56,7 +56,7 @@ func TrustedHeaderAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		log.Printf("TrustedHeaderAuthMiddleware: Attempting to authenticate user with email from trusted header: %s\n", email)
+		log.Printf("TrustedHeaderAuthMiddleware: Attempting to authenticate user with hashed email from trusted header: %x\n", sha256.Sum256([]byte(email)))
 
 		appUser, err := store.GetApplicationUserByEmail(email)
 		if err != nil {
@@ -70,19 +70,19 @@ func TrustedHeaderAuthMiddleware() gin.HandlerFunc {
 					UpdatedAt:      time.Now(),
 				}
 				if err := store.CreateApplicationUser(newUser); err != nil {
-					log.Printf("TrustedHeaderAuthMiddleware: Error creating new application user for email %s: %v\n", email, err)
+					log.Printf("TrustedHeaderAuthMiddleware: Error creating new application user for hashed email %x: %v\n", sha256.Sum256([]byte(email)), err)
 					c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user profile from trusted header"})
 					return
 				}
 				appUser = newUser
-				log.Printf("TrustedHeaderAuthMiddleware: New user created from trusted header: %s, Email: %s\n", appUser.InternalUserID, appUser.Email)
+				log.Printf("TrustedHeaderAuthMiddleware: New user created from trusted header: %s, Hashed Email: %x\n", appUser.InternalUserID, sha256.Sum256([]byte(appUser.Email)))
 			} else {
-				log.Printf("TrustedHeaderAuthMiddleware: Error looking up user by email %s: %v\n", email, err)
+				log.Printf("TrustedHeaderAuthMiddleware: Error looking up user by hashed email %x: %v\n", sha256.Sum256([]byte(email)), err)
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Database error looking up user by trusted header email"})
 				return
 			}
 		} else {
-			log.Printf("TrustedHeaderAuthMiddleware: Existing user found from trusted header: %s, Email: %s\n", appUser.InternalUserID, appUser.Email)
+			log.Printf("TrustedHeaderAuthMiddleware: Existing user found from trusted header: %s, Hashed Email: %x\n", appUser.InternalUserID, sha256.Sum256([]byte(appUser.Email)))
 			// Optionally, update UpdatedAt or other fields if needed
 			// appUser.UpdatedAt = time.Now()
 			// if err := store.UpdateApplicationUser(appUser); err != nil { ... }
@@ -95,7 +95,7 @@ func TrustedHeaderAuthMiddleware() gin.HandlerFunc {
 			Email:          appUser.Email,
 		}
 		if err := StoreUserInSession(c, userInfo); err != nil {
-			log.Printf("TrustedHeaderAuthMiddleware: Error storing user info in session for email %s: %v\n", email, err)
+			log.Printf("TrustedHeaderAuthMiddleware: Error storing user info in session for hashed email %x: %v\n", sha256.Sum256([]byte(email)), err)
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to store user session from trusted header"})
 			return
 		}
