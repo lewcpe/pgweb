@@ -357,3 +357,43 @@ sequenceDiagram
     end
     Backend-->>Frontend: Success response
     Frontend-->>User: Updates DB list (shows as soft-deleted or hides), success message
+
+### 9. Automated Testing with Cypress
+
+We've implemented automated end-to-end tests for the backend API using Cypress. These tests cover critical functionality for database and user management.
+
+**Test Structure:**
+- Tests are located in the `tests/cypress` directory
+- Configuration: `cypress.config.js`
+- Support file: `support/e2e.js` with custom commands
+- Test specs:
+  - `e2e/databases.cy.js`: Tests for database management endpoints
+  - `e2e/pgusers.cy.js`: Tests for PostgreSQL user management endpoints
+
+**Key Features:**
+- Test isolation using unique database names with timestamps
+- Comprehensive cleanup after tests
+- Custom commands for common API operations
+- Tests cover:
+  - Success scenarios (200/201 responses)
+  - Error handling (400, 404 responses)
+  - Data validation
+- Docker Compose setup for isolated testing
+
+**Running Tests:**
+1. **Local Setup:**
+   - Start the backend server: `cd backend && go run main.go`
+   - Run Cypress tests: `cd tests && npx cypress run`
+   - For interactive mode: `cd tests && npx cypress open`
+
+2. **Docker Compose:**
+   - Build and run the test environment: `docker compose -f compose.test.yml up --build`
+   - The tests will run automatically in the Cypress container
+   - To run tests again: `docker compose -f compose.test.yml up cypress`
+
+**Test Coverage:**
+- Database creation, listing, retrieval, and deletion
+- PostgreSQL user creation, listing, and password regeneration
+- Input validation for database and user names
+- Error handling for non-existent resources
+- Authentication flow

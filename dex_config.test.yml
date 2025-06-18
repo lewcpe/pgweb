@@ -1,0 +1,30 @@
+issuer: http://127.0.0.1:5556/dex
+storage:
+  type: postgres
+  config:
+    host: postgres
+    port: 5432
+    user: test_admin
+    password: test_password
+    database: test_admin_db
+    ssl:
+      mode: disable
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  skipApprovalScreen: true
+
+staticClients:
+- id: test-client
+  secret: test-secret
+  name: 'Test Client'
+  redirectURIs:
+  - 'http://localhost:8080/auth/callback'
+
+enablePasswordDB: true
+staticPasswords:
+- email: "test@example.com"
+  password: "testpassword"
+  username: "testuser"
