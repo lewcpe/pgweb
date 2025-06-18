@@ -8,7 +8,6 @@ Cypress.Commands.overwrite("log", function(log, ...args) {
     return log(...args);
   }
 });
-
 // Global setup for backend API tests
 Cypress.Commands.add('apiRequest', (method, endpoint, body = null, token = null) => {
   const options = {
