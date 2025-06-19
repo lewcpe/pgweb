@@ -5,6 +5,17 @@ describe('Frontend UI Components', () => {
       req.headers['x-forwarded-email'] = 'test@example.com';
     });
     cy.visit('/'); // Visit the base URL of the frontend application
+    cy.window().then((win) => {
+      if (win.enableMockApi) {
+        win.enableMockApi(true);
+      } else {
+        console.error('enableMockApi function not found on window object.');
+        // Optionally, fail the test if mocking is critical.
+        // Given these tests are less API-dependent, a console error might suffice.
+        // However, for consistency with other tests, throwing an error is better.
+        throw new Error('enableMockApi function not found on window object. Frontend app might not have exposed it.');
+      }
+    });
   });
 
   it('should toggle theme between light and dark mode', () => {

@@ -5,6 +5,17 @@ describe('Frontend Database Operations', () => {
       req.headers['x-forwarded-email'] = 'test@example.com';
     });
     cy.visit('/'); // Visit the base URL of the frontend application
+    cy.window().then((win) => {
+      if (win.enableMockApi) {
+        win.enableMockApi(true);
+      } else {
+        // Log an error or throw to fail the test if the function isn't found.
+        // This helps in debugging setup issues.
+        console.error('enableMockApi function not found on window object.');
+        // To make the test fail if mocking can't be enabled:
+        throw new Error('enableMockApi function not found on window object. Frontend app might not have exposed it.');
+      }
+    });
   });
 
   it('should display the dashboard after successful login simulation', () => {
@@ -16,12 +27,13 @@ describe('Frontend Database Operations', () => {
     cy.get('a[href="/databases"]').click();
     cy.url().should('include', '/databases');
     cy.contains('Database List').should('be.visible');
-    // Assuming there might be some default databases or we'll mock them later
-    // cy.get('.database-item').should('have.length.at.least', 1);
+    // Check for mock databases
+    cy.contains('mockdb1').should('be.visible');
+    cy.contains('another_db').should('be.visible');
   });
 
   it('should allow creating a new database', () => {
-    const dbName = `test_db_${Date.now()}`;
+    const dbName = `test_db_mock_${Date.now()}`; // Differentiate mock test dbs
     cy.get('a[href="/databases"]').click();
     cy.url().should('include', '/databases');
     cy.contains('Create New Database').click();
