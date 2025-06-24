@@ -8,15 +8,6 @@ This document provides details about the backend API for pgweb-backend. The API 
 
 ### Authentication
 
-- **POST /auth/login**
-  - Initiates the OIDC login flow.
-  - Redirects the user to the OIDC provider.
-- **GET /auth/callback**
-  - Handles the OIDC callback after successful authentication.
-  - Exchanges the authorization code for tokens and establishes a session.
-- **POST /auth/logout**
-  - Clears the user's session.
-  - Redirects the user to a configured logout URL or the home page.
 - **GET /auth/me**
   - Retrieves the current authenticated user's information from the session.
   - Returns user details if a session exists.
