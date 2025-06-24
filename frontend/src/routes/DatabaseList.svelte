@@ -58,15 +58,6 @@
           sortable: true,
           value: (row) => new Date(row.created_at).toLocaleDateString()
         },
-        {
-          key: 'actions',
-          title: 'Actions',
-          value: (row) => row, // Pass the whole row for actions
-          renderValue: (row) => ({
-            component: ActionButtons, // We'll create this component next
-            props: { database: row, navigateFn: navigate }
-          })
-        }
       ]}
       rows={databases}
       classTable="min-w-full divide-y divide-gray-200"
@@ -75,7 +66,11 @@
       classTbody="bg-white divide-y divide-gray-200"
       classTr="hover:bg-gray-50"
       classTd="px-6 py-4 whitespace-nowrap text-sm text-gray-900"
-    />
+    >
+      <div slot="actions" let:row>
+        <ActionButtons database={row} navigateFn={navigate} />
+      </div>
+    </SvelteTable>
   {/if}
 
   <div class="mt-6">

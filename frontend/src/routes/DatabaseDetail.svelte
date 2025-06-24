@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import api from '$lib/api'; // Corrected path to $lib
   import SvelteTable from 'svelte-table'; // For PG Users table
-
+  import UserActionButtons from '$lib/components/UserActionButtons.svelte';
+  
   export let navigate: (path: string) => void;
 
   /**
@@ -44,6 +45,7 @@
   let isSubmittingUser = false;
 
   async function fetchData() {
+    console.log("Loading user data");
     isLoading = true;
     error = null;
     try {
@@ -88,7 +90,31 @@
       isSubmittingUser = false;
     }
   }
-  
+
+ const pgUserTableColumns = [
+   { key: 'pg_username', title: 'Username', sortable: true },
+   { key: 'permission_level', title: 'Permissions', sortable: true },
+   { key: 'status', title: 'Status', sortable: true },
+   {
+     key: 'actions',
+     title: 'Actions',
+     renderValue: (/** @type {PgUser} */ user) => ({
+       component: UserActionButtons, // This will be a new component
+       props: { user, onRegenerate: () => handleRegeneratePassword(user.pg_user_id, user.pg_username) }
+     })
+   }
+ ];
+
+   function openCreateUserModal() {
+    console.log("Create User Model");
+    // Clear any previous errors when opening the modal
+    pgUserError = null;
+    newPgUsername = "";
+    newPgUserPermission = 'read';
+    showCreateUserModal = true;
+  }
+
+
   async function handleRegeneratePassword(pgUserId: string, pgUsername: string) {
     if (!confirm(`Are you sure you want to regenerate the password for ${pgUsername}?`)) return;
     pgUserError = null;
@@ -104,19 +130,6 @@
     }
   }
 
-  const pgUserTableColumns = [
-    { key: 'pg_username', title: 'Username', sortable: true },
-    { key: 'permission_level', title: 'Permissions', sortable: true },
-    { key: 'status', title: 'Status', sortable: true },
-    {
-      key: 'actions',
-      title: 'Actions',
-      renderValue: (/** @type {PgUser} */ user) => ({
-        component: UserActionButtons, // This will be a new component
-        props: { user, onRegenerate: () => handleRegeneratePassword(user.pg_user_id, user.pg_username) }
-      })
-    }
-  ];
 
 </script>
 
@@ -165,7 +178,7 @@
 
     <div class="mb-6">
       <h3 class="text-xl font-semibold mb-3 text-gray-800">PostgreSQL Users</h3>
-      <button on:click={() => showCreateUserModal = true} class="mb-4 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+      <button on:click={openCreateUserModal} class="mb-4 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
         Create New PG User
       </button>
       
@@ -197,59 +210,57 @@
   {/if}
 </div>
 
+<!-- Modal for creating a new PostgreSQL user -->
 {#if showCreateUserModal}
-<div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center" id="my-modal">
-  <div class="relative mx-auto p-5 border w-full max-w-md shadow-lg rounded-md bg-white">
-    <div class="mt-3 text-center">
-      <h3 class="text-lg leading-6 font-medium text-gray-900">Create New PostgreSQL User</h3>
-      <form on:submit|preventDefault={handleCreatePgUser} class="mt-2 space-y-4 text-left">
-        <div>
-          <label for="pgUsername" class="block text-sm font-medium text-gray-700">Username:</label>
-          <input
-            type="text"
-            id="pgUsername"
-            bind:value={newPgUsername}
-            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            placeholder="e.g., my_app_user"
-            required
-          />
-        </div>
-        <div>
-          <label for="pgUserPermission" class="block text-sm font-medium text-gray-700">Permission Level:</label>
-          <select
-            id="pgUserPermission"
-            bind:value={newPgUserPermission}
-            class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-          >
-            <option value="read">Read-only</option>
-            <option value="write">Read/Write</option>
-          </select>
-        </div>
-        {#if pgUserError && showCreateUserModal} <!-- Show error inside modal -->
-          <p class="text-sm text-red-600">{pgUserError}</p>
-        {/if}
-        <div class="items-center px-4 py-3 space-x-2">
-          <button
-            type="submit"
-            disabled={isSubmittingUser}
-            class="px-4 py-2 bg-blue-600 text-white text-base font-medium rounded-md w-auto hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-          >
-            {#if isSubmittingUser} Creating... {:else} Create User {/if}
-          </button>
-          <button
-            type="button"
-            on:click={() => { showCreateUserModal = false; pgUserError = null; }}
-            class="px-4 py-2 bg-gray-200 text-gray-700 text-base font-medium rounded-md w-auto hover:bg-gray-300 focus:outline-none"
-          >
-            Cancel
-          </button>
-        </div>
-      </form>
+  <div id="create-user-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-600 bg-opacity-50" on:click|self={() => { showCreateUserModal = false; pgUserError = null; }}>
+    <div class="relative mx-auto p-6 border w-full max-w-md shadow-lg rounded-md bg-white" on:click|stopPropagation>
+      <div class="mt-3">
+        <h3 class="text-lg leading-6 font-medium text-gray-900 text-center">Create New PostgreSQL User</h3>
+        <form on:submit|preventDefault={handleCreatePgUser} class="mt-4 space-y-4">
+          <div>
+            <label for="pgUsername" class="block text-sm font-medium text-gray-700">Username:</label>
+            <input
+              type="text"
+              id="pgUsername"
+              bind:value={newPgUsername}
+              class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              placeholder="e.g., my_app_user"
+              required
+            />
+          </div>
+          <div>
+            <label for="pgUserPermission" class="block text-sm font-medium text-gray-700">Permission Level:</label>
+            <select
+              id="pgUserPermission"
+              bind:value={newPgUserPermission}
+              class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+            >
+              <option value="read">Read-only</option>
+              <option value="write">Read/Write</option>
+            </select>
+          </div>
+          {#if pgUserError}
+            <p class="text-sm text-red-600 bg-red-100 p-2 rounded-md">{pgUserError}</p>
+          {/if}
+          <div class="flex justify-end items-center pt-4 space-x-2">
+            <button
+              type="button"
+              on:click={() => { showCreateUserModal = false; pgUserError = null; }}
+              class="px-4 py-2 bg-gray-200 text-gray-700 text-base font-medium rounded-md hover:bg-gray-300 focus:outline-none"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmittingUser}
+              class="px-4 py-2 bg-blue-600 text-white text-base font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+            >
+              {#if isSubmittingUser} Creating... {:else} Create User {/if}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
-</div>
 {/if}
 
-<script context="module">
-  import UserActionButtons from '$lib/components/UserActionButtons.svelte';
-</script>

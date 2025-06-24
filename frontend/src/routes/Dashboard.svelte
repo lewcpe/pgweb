@@ -12,17 +12,10 @@
 
   onMount(async () => {
     try {
-      // databases = await api.listDatabases(); // Placeholder for API call
-      // Simulated API call
-      setTimeout(() => {
-        databases = [
-          { database_id: '1', pg_database_name: 'my_first_db', status: 'active' },
-          { database_id: '2', pg_database_name: 'another_db', status: 'soft_deleted' },
-        ];
-        isLoading = false;
-      }, 1000);
+      databases = await api.listDatabases();
     } catch (err) {
       error = (err as Error).message;
+    } finally {
       isLoading = false;
     }
   });
@@ -33,10 +26,8 @@
       return;
     }
     try {
-      // const newDb = await api.createDatabase(newDbName);
-      // databases = [...databases, newDb];
-      alert(`Simulating creation of: ${newDbName}`); // Placeholder
-      databases = [...databases, { database_id: Math.random().toString(), pg_database_name: newDbName, status: 'pending_creation' }];
+      const newDb = await api.createDatabase(newDbName);
+      databases = [...databases, newDb];
       newDbName = "";
       showCreateModal = false;
     } catch (err) {
