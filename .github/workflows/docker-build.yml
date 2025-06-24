@@ -16,6 +16,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: Set IMAGE_TAG
+        run: echo "IMAGE_TAG=$(echo ${GITHUB_SHA::7})" >> $GITHUB_ENV
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
 
@@ -39,7 +42,7 @@ jobs:
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: | # Updated tags
             ghcr.io/${{ github.repository_owner }}/pgweb-backend:latest
-            ghcr.io/${{ github.repository_owner }}/pgweb-backend:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/pgweb-backend:${{ env.IMAGE_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -51,6 +54,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+
+      - name: Set IMAGE_TAG
+        run: echo "IMAGE_TAG=$(echo ${GITHUB_SHA::7})" >> $GITHUB_ENV
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
@@ -75,6 +81,6 @@ jobs:
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: | # Updated tags
             ghcr.io/${{ github.repository_owner }}/pgweb-frontend:latest
-            ghcr.io/${{ github.repository_owner }}/pgweb-frontend:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/pgweb-frontend:${{ env.IMAGE_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
