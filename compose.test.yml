@@ -28,6 +28,7 @@ services:
         condition: service_healthy
 
   backend:
+    image: ${BACKEND_IMAGE:-pgweb/pgweb-backend-test}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -57,6 +58,7 @@ services:
       start_period: 10s
 
   frontend:
+    image: ${FRONTEND_IMAGE:-pgweb/pgweb-frontend-test}
     build:
       context: ./frontend
       dockerfile: Dockerfile
