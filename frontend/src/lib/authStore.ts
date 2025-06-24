@@ -1,9 +1,9 @@
 import { writable } from 'svelte/store';
 
 export interface User {
-  id: string;
-  username: string;
-  email?: string; // Optional, depending on what the backend provides
+  internal_user_id: string;
+  oidc_sub: string;
+  email: string;
   // Add other user-related fields as necessary
 }
 
@@ -22,6 +22,7 @@ const initialAuthState: AuthState = {
 export const authStore = writable<AuthState>(initialAuthState);
 
 export function setAuthenticated(user: User) {
+  console.log("Authenticated")
   authStore.set({ isAuthenticated: true, user, error: null });
 }
 
