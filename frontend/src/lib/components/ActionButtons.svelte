@@ -28,15 +28,15 @@
 </script>
 
 <div class="flex space-x-2">
-  <button 
-    on:click={handleViewDetails} 
+  <button
+    on:click={handleViewDetails}
     class="bg-blue-500 hover:bg-blue-700 text-white text-xs font-bold py-1 px-2 rounded"
     title="View Details"
   >
     View
   </button>
-  <button 
-    on:click={handleDelete} 
+  <button
+    on:click={handleDelete}
     class="bg-red-500 hover:bg-red-700 text-white text-xs font-bold py-1 px-2 rounded"
     title="Delete Database"
     disabled={database?.status === 'soft_deleted' || database?.status === 'pending_deletion'}

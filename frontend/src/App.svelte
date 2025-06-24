@@ -20,7 +20,7 @@
   async function checkCurrentUserSession() {
     try {
       const user = await api.getMe(); // Call /api/me
-      if (user && user.id) { // Adjust 'user.id' based on your actual User model from backend
+      if (user && user.internal_user_id) { // Use internal_user_id for authentication check
         setAuthenticated(user);
       } else {
         // No active session, or /api/me returned unexpected data
@@ -139,7 +139,7 @@
         {#if isAuthenticated}
           <a href="/" on:click|preventDefault={() => navigate('/')}>Dashboard</a> |
           <a href="/databases" on:click|preventDefault={() => navigate('/databases')}>Databases</a> |
-          <span>Welcome, {currentUser?.username || 'User'}!</span> |
+          <span>Welcome, {currentUser?.email || 'User'}!</span> |
           <button on:click|preventDefault={handleLogout} class="logout-button">Logout</button>
         {:else}
           <a href="/login" on:click|preventDefault={() => navigate('/login')}>Login</a>
