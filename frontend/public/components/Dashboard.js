@@ -3,11 +3,11 @@
     const dashboardDbList = document.getElementById('dashboard-db-list');
     const loadingIndicator = document.getElementById('dashboard-loading');
     const errorIndicator = document.getElementById('dashboard-error');
-    const showCreateDbModalButton = document.getElementById('show-create-db-modal-dashboard');
-    const createDbModal = document.getElementById('create-db-modal-dashboard-container');
-    const createDbFormModal = document.getElementById('create-db-form-modal-dashboard');
-    const newDbNameInputModal = document.getElementById('newDbNameDashboard');
-    const createDbModalError = document.getElementById('create-db-modal-dashboard-error');
+    const showCreateDbDialogButton = document.getElementById('show-create-db-modal-dashboard'); // ID of button remains same
+    const createDbDialog = document.getElementById('create-db-dialog-dashboard'); // Changed ID
+    const createDbFormInDialog = document.getElementById('create-db-form-modal-dashboard'); // ID of form remains same
+    const newDbNameInputInDialog = document.getElementById('newDbNameDashboard'); // ID of input remains same
+    const createDbDialogError = document.getElementById('create-db-modal-dashboard-error'); // ID of error p remains same
 
     let databases = [];
 
@@ -67,11 +67,11 @@
         });
     }
 
-    async function handleCreateDatabaseModal(event) {
+    async function handleCreateDatabaseDialog(event) {
         event.preventDefault();
-        const dbName = newDbNameInputModal.value.trim();
+        const dbName = newDbNameInputInDialog.value.trim();
         if (!dbName) {
-            displayError('create-db-modal-dashboard-error', "Database name cannot be empty.");
+            displayError('create-db-modal-dashboard-error', "Database name cannot be empty."); // Error ID is okay
             return;
         }
 
@@ -80,25 +80,45 @@
         displayError('create-db-modal-dashboard-error', '');
 
         try {
+            // Note: The API in api.js was updated to expect { name: dbName }
+            // but the backend might expect { pg_database_name: dbName }.
+            // Let's assume api.js handles the correct parameter naming for now.
+            // If createDatabase fails, check this. The current api.js has:
+            // createDatabase: (name) => request('POST', '/databases', { name }),
+            // This should be correct if backend expects {"name": "foo"}
+            // If backend expects {"pg_database_name": "foo"}, then api.js should be:
+            // createDatabase: (name) => request('POST', '/databases', { pg_database_name: name }),
+            // For now, proceeding with `dbName` as the direct value.
             const newDb = await window.api.createDatabase(dbName);
             databases.push(newDb); // Add to local cache
             renderDatabases(); // Re-render the list
-            newDbNameInputModal.value = ''; // Clear input
-            createDbModal.classList.remove('active'); // Close modal
+            newDbNameInputInDialog.value = ''; // Clear input
+            if (createDbDialog) createDbDialog.close(); // Close dialog
         } catch (err) {
-            console.error("Error creating database from modal:", err);
-            displayError('create-db-modal-dashboard-error', `Error: ${err.message}`);
+            console.error("Error creating database from dialog:", err);
+            // Check if error.body.message exists from the new api.js error handling
+            const message = err.body?.message || err.message;
+            displayError('create-db-modal-dashboard-error', `Error: ${message}`);
         }
     }
 
-    showCreateDbModalButton.addEventListener('click', () => {
-        newDbNameInputModal.value = '';
-        displayError('create-db-modal-dashboard-error', ''); // Clear previous errors
-        createDbModal.classList.add('active');
-        newDbNameInputModal.focus();
+    showCreateDbDialogButton.addEventListener('click', () => {
+        if (createDbDialog) {
+            newDbNameInputInDialog.value = '';
+            displayError('create-db-modal-dashboard-error', ''); // Clear previous errors
+            createDbDialog.showModal();
+            newDbNameInputInDialog.focus();
+        } else {
+            console.error("Create DB Dialog not found");
+        }
     });
 
-    createDbFormModal.addEventListener('submit', handleCreateDatabaseModal);
+    if (createDbFormInDialog) {
+        createDbFormInDialog.addEventListener('submit', handleCreateDatabaseDialog);
+    } else {
+        console.error("Create DB Form in Dialog not found");
+    }
+
 
     // Listen for view changes to load data if this section becomes active
     document.addEventListener('viewchanged', (event) => {

@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PostgreSQL Self-Service</title>
-    <link rel="stylesheet" href="style.css">
+    <!-- <link rel="stylesheet" href="style.css"> -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@latest/css/pico.min.css">
 </head>
 <body>
     <header>
@@ -14,10 +15,11 @@
             <a data-path="/databases">Databases</a>
             <!-- User info and logout will be implicitly handled by oauth2-proxy behavior,
                  or we might add a link to the oauth2-proxy sign_out endpoint later -->
+            <span id="user-email-display" style="margin-left: auto;"></span>
         </nav>
     </header>
 
-    <div class="container">
+    <main class="container">
         <!-- Content Sections -->
         <section id="dashboard-section" class="content-section">
             <h2>My Databases (Dashboard View)</h2>
@@ -60,54 +62,67 @@
         <section id="databasecreateform-section" class="content-section">
             <h2>Create New Database</h2>
             <form id="create-db-form">
-                <div>
-                    <label for="dbNameInput">Database Name:</label>
+                <label for="dbNameInput">
+                    Database Name:
                     <input type="text" id="dbNameInput" name="dbName" required>
-                    <p id="db-name-error" class="error" style="display:none;"></p>
-                </div>
+                </label>
+                <p id="db-name-error" class="error" style="display:none;"></p>
                 <button type="submit" id="create-db-submit">Create Database</button>
-                <button type="button" id="cancel-create-db">Cancel</button>
+                <button type="button" id="cancel-create-db" class="secondary">Cancel</button>
                 <p id="create-db-form-error" class="error" style="display:none;"></p>
                 <p id="create-db-form-success" class="success" style="display:none;"></p>
             </form>
         </section>
-    </div>
+    </main>
 
-    <!-- Modals -->
-    <div id="create-db-modal-dashboard-container" class="modal">
-        <div class="modal-content">
-            <h3>Create New Database (Dashboard)</h3>
+    <!-- Modals refactored to <dialog> -->
+    <dialog id="create-db-dialog-dashboard">
+        <article>
+            <header>
+                <a href="#close-db-dialog-dashboard" aria-label="Close" class="close"></a>
+                <h3>Create New Database (Dashboard)</h3>
+            </header>
             <form id="create-db-form-modal-dashboard">
-                <input type="text" id="newDbNameDashboard" placeholder="Enter database name" required>
+                <label for="newDbNameDashboard">
+                    Database Name:
+                    <input type="text" id="newDbNameDashboard" name="newDbNameDashboard" placeholder="Enter database name" required>
+                </label>
                 <p id="create-db-modal-dashboard-error" class="error" style="display:none;"></p>
-                <button type="submit">Create</button>
-                <button type="button" class="cancel-modal">Cancel</button>
+                <footer>
+                    <button type="button" class="secondary cancel-dialog" data-dialogid="create-db-dialog-dashboard">Cancel</button>
+                    <button type="submit">Create</button>
+                </footer>
             </form>
-        </div>
-    </div>
+        </article>
+    </dialog>
 
-    <div id="create-pg-user-modal-container" class="modal">
-        <div class="modal-content">
-            <h3>Create New PostgreSQL User</h3>
+    <dialog id="create-pg-user-dialog">
+        <article>
+            <header>
+                <a href="#close-pg-user-dialog" aria-label="Close" class="close"></a>
+                <h3>Create New PostgreSQL User</h3>
+            </header>
             <form id="create-pg-user-form">
                 <input type="hidden" id="pgUserDbId"> <!-- To store current DB ID -->
-                <div>
-                    <label for="pgUsernameInput">Username:</label>
+                <label for="pgUsernameInput">
+                    Username:
                     <input type="text" id="pgUsernameInput" name="pgUsername" required>
-                </div>
-                <div>
-                    <label for="pgUserPermissionInput">Permission Level:</label>
+                </label>
+                <label for="pgUserPermissionInput">
+                    Permission Level:
                     <select id="pgUserPermissionInput" name="pgUserPermission">
                         <option value="read">Read-only</option>
                         <option value="write">Read/Write</option>
                     </select>
-                </div>
+                </label>
                 <p id="create-pg-user-modal-error" class="error" style="display:none;"></p>
-                <button type="submit">Create User</button>
-                <button type="button" class="cancel-modal">Cancel</button>
+                <footer>
+                    <button type="button" class="secondary cancel-dialog" data-dialogid="create-pg-user-dialog">Cancel</button>
+                    <button type="submit">Create User</button>
+                </footer>
             </form>
-        </div>
-    </div>
+        </article>
+    </dialog>
 
     <script src="api.js"></script>
     <script src="router.js"></script>

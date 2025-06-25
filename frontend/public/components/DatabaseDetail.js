@@ -8,9 +8,9 @@
     const backToDbListButton = document.getElementById('back-to-db-list');
 
     const pgUsersTableContainer = document.getElementById('pg-users-table-container');
-    const showCreatePgUserModalButton = document.getElementById('show-create-pg-user-modal');
-    const createPgUserModal = document.getElementById('create-pg-user-modal-container');
-    const createPgUserForm = document.getElementById('create-pg-user-form');
+    const showCreatePgUserDialogButton = document.getElementById('show-create-pg-user-modal'); // Button ID remains the same
+    const createPgUserDialog = document.getElementById('create-pg-user-dialog'); // Changed ID
+    const createPgUserFormInDialog = document.getElementById('create-pg-user-form'); // Form ID remains the same
     const pgUsernameInput = document.getElementById('pgUsernameInput');
     const pgUserPermissionInput = document.getElementById('pgUserPermissionInput');
     const pgUserDbIdInput = document.getElementById('pgUserDbId'); // Hidden input to store current DB ID for the modal
@@ -120,43 +120,54 @@
         });
     }
 
-    showCreatePgUserModalButton.addEventListener('click', () => {
-        pgUsernameInput.value = '';
-        pgUserPermissionInput.value = 'read';
-        displayError('create-pg-user-modal-error', ''); // Clear previous modal errors
-        createPgUserModal.classList.add('active');
-        pgUsernameInput.focus();
-    });
-
-    createPgUserForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const username = pgUsernameInput.value.trim();
-        const permission = pgUserPermissionInput.value;
-        const databaseId = pgUserDbIdInput.value; // Get dbId from hidden input
-
-        if (!username) {
-            displayError('create-pg-user-modal-error', "PostgreSQL username cannot be empty.");
-            return;
-        }
-        // Basic validation (from Svelte component)
-        if (username.length < 3 || username.length > 63 || !/^[a-z][a-z0-9_]*$/.test(username) || username.startsWith('pg_')) {
-            displayError('create-pg-user-modal-error', "Invalid PostgreSQL username format or length (3-63, starts with letter, a-z0-9_, no pg_ prefix).");
-            return;
-        }
-
-        displayError('create-pg-user-modal-error', '');
-
-        try {
-            const newUser = await window.api.createPGUser(databaseId, username, permission);
-            pgUsers.push(newUser);
-            renderPgUsersTable(); // Re-render
-            createPgUserModal.classList.remove('active');
-            displaySuccess('pg-user-success', `User ${newUser.pg_username} created. Password: ${newUser.password || 'Check API response'}. Please save it securely.`);
-        } catch (err) {
-            console.error("Error creating PostgreSQL user:", err);
-            displayError('create-pg-user-modal-error', `Error: ${err.message}`);
+    showCreatePgUserDialogButton.addEventListener('click', () => {
+        if (createPgUserDialog) {
+            pgUsernameInput.value = '';
+            pgUserPermissionInput.value = 'read'; // Default permission
+            displayError('create-pg-user-modal-error', ''); // Clear previous dialog errors
+            createPgUserDialog.showModal();
+            pgUsernameInput.focus();
+        } else {
+            console.error("Create PG User Dialog not found");
         }
     });
+
+    if (createPgUserFormInDialog) {
+        createPgUserFormInDialog.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const username = pgUsernameInput.value.trim();
+            const permission = pgUserPermissionInput.value;
+            const databaseId = pgUserDbIdInput.value; // Get dbId from hidden input
+
+            if (!username) {
+                displayError('create-pg-user-modal-error', "PostgreSQL username cannot be empty.");
+                return;
+            }
+            // Basic validation (from Svelte component)
+            if (username.length < 3 || username.length > 63 || !/^[a-z][a-z0-9_]*$/.test(username) || username.startsWith('pg_')) {
+                displayError('create-pg-user-modal-error', "Invalid PostgreSQL username format or length (3-63, starts with letter, a-z0-9_, no pg_ prefix).");
+                return;
+            }
+
+            displayError('create-pg-user-modal-error', '');
+
+            try {
+                // Current api.js: createPGUser: (databaseId, username, permission_level) => request('POST', `/databases/${databaseId}/pgusers`, { username, permission_level }),
+                // This seems correct if backend expects { "username": "...", "permission_level": "..." }
+                const newUser = await window.api.createPGUser(databaseId, username, permission);
+                pgUsers.push(newUser);
+                renderPgUsersTable(); // Re-render
+                if (createPgUserDialog) createPgUserDialog.close();
+                displaySuccess('pg-user-success', `User ${newUser.pg_username} created. Password: ${newUser.password || 'Use generated password from backend'}. Please save it securely.`);
+            } catch (err) {
+                console.error("Error creating PostgreSQL user:", err);
+                const message = err.body?.message || err.message;
+                displayError('create-pg-user-modal-error', `Error: ${message}`);
+            }
+        });
+    } else {
+        console.error("Create PG User Form in Dialog not found");
+    }
 
     backToDbListButton.addEventListener('click', () => {
         window.router.navigate('/databases');
