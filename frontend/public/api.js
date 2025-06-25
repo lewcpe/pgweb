@@ -77,6 +77,8 @@ const api = {
         request('POST', `/databases/${databaseId}/pgusers`, { username, permission_level }),
     regeneratePGUserPassword: (databaseId, pgUserId) =>
         request('POST', `/databases/${databaseId}/pgusers/${pgUserId}/regenerate-password`),
+    deletePGUser: (databaseId, pgUserId) =>
+        request('DELETE', `/databases/${databaseId}/pgusers/${pgUserId}`),
 };
 
 // Make it available globally or as a module if using <script type="module">

@@ -401,6 +401,33 @@ func GetManagedPGUsersByDatabaseID(databaseID uuid.UUID) ([]models.ManagedPGUser
 	return users, nil
 }
 
+// DeleteManagedPGUser deletes a PostgreSQL user record from the application database.
+// Note: This function does NOT check for ownership. The handler is responsible for verifying
+// that the user making the request owns the parent database of the PG user being deleted.
+func DeleteManagedPGUser(pgUserID uuid.UUID) error {
+	if AppDB == nil {
+		return errors.New("database not initialized")
+	}
+
+	query := `DELETE FROM managed_pg_users WHERE pg_user_id = $1`
+	result, err := AppDB.Exec(query, pgUserID)
+	if err != nil {
+		return fmt.Errorf("error deleting managed_pg_user with ID %s: %w", pgUserID, err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error getting rows affected after deleting managed_pg_user with ID %s: %w", pgUserID, err)
+	}
+
+	if rowsAffected == 0 {
+		return sql.ErrNoRows // Indicates the user was not found
+	}
+
+	log.Printf("Successfully deleted managed_pg_user with ID %s", pgUserID)
+	return nil
+}
+
 func UpdateManagedPGUserStatusForDB(databaseID uuid.UUID, newStatus string) error {
 	if AppDB == nil {
 		return errors.New("database not initialized")

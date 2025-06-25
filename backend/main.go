@@ -113,8 +113,8 @@ func main() {
 				pgUserRoutes.POST("", handlers.CreatePGUserHandler)
 				pgUserRoutes.GET("", handlers.ListPGUsersHandler)
 				pgUserRoutes.POST("/:pg_user_id/regenerate-password", handlers.RegeneratePGPasswordHandler)
-				// TODO: Add route for DELETING a PG user
 				// pgUserRoutes.DELETE("/:pg_user_id", handlers.DeletePGUserHandler)
+				pgUserRoutes.DELETE("/:pg_user_id", handlers.DeletePGUserHandler)
 			}
 		}
 	}
