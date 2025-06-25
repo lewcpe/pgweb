@@ -24,7 +24,7 @@
         <!-- This section is now the main front page, showing list of databases -->
         <section id="dashboard-section" class="content-section active">
             <h2>My Databases</h2>
-            <button id="show-create-db-modal-dashboard">Create New Database</button>
+            <button id="show-create-db-modal-dashboard" style="display:none;">Create New Database</button>
             <div id="dashboard-db-list">
                 <!-- Database list will be rendered here by Dashboard.js -->
             </div>
@@ -34,7 +34,7 @@
 
         <!-- This section will be for managing a single database (details & users) -->
         <!-- It will be activated by router.js when path is /databases/:id/manage -->
-        <section id="databasemanage-section" class="content-section">
+        <section style="display: none;" id="databasemanage-section" class="content-section">
             <h2 id="db-manage-name">Database Management</h2>
             <button id="back-to-main-db-list">Back to My Databases</button>
             <div id="db-detail-content">
@@ -53,7 +53,7 @@
         </section>
 
         <!-- This section is for the standalone database creation form -->
-        <section id="databasecreateform-section" class="content-section">
+        <section id="databasecreateform-section" class="content-section" style="display:none;">
             <h2>Create New Database</h2>
             <form id="create-db-form">
                 <label for="dbNameInput">

@@ -3,7 +3,11 @@
     const contentSections = document.querySelectorAll('.content-section');
     const navLinks = document.querySelectorAll('nav a[data-path]');
 
-    function updateView(path) {
+    function updateView() {
+        const params = new URLSearchParams(window.location.search);
+        let path = params.get('route') || '/';
+
+
         // Default to 'My Databases' (dashboard-section) if path is empty or just "/"
         if (path === '' || path === '/') {
             path = '/';
@@ -33,14 +37,14 @@
             const dbId = pathParts[2];
             if (dbId && dbId !== 'new') { // Ensure it's an ID and not the 'new' keyword
                 const newPath = `/databases/${dbId}/manage`;
-                history.replaceState({ path: newPath }, '', newPath); // Update URL
-                updateView(newPath); // Recurse with the new path
+                history.replaceState({ path: newPath }, '', `index.html?route=${newPath}`); // Update URL
+                updateView(); // Recurse with the new path
                 return; // Important: exit current updateView call
             } else {
                 // If it's /databases/ or an invalid sub-path, redirect to main page
                 console.warn(`Invalid or old database path: ${path}. Redirecting to My Databases.`);
-                history.replaceState({ path: '/' }, '', '/');
-                updateView('/');
+                history.replaceState({ path: '/' }, '', 'index.html?route=/');
+                updateView();
                 return;
             }
         }
@@ -54,16 +58,19 @@
             path = '/'; // Set path to default for event dispatch
             targetSectionId = 'dashboard-section';
             pageTitle = 'My Databases | PostgreSQL Self-Service';
-            history.replaceState({ path: '/' }, '', '/'); // Update URL without new history entry
+            history.replaceState({ path: '/' }, '', 'index.html?route=/'); // Update URL without new history entry
         }
 
         document.title = pageTitle;
 
         contentSections.forEach(section => {
+            console.log("Showing section " + targetSectionId);
             if (section.id === targetSectionId) {
                 section.classList.add('active');
+                section.style.display = 'block'; // Show the active section
             } else {
                 section.classList.remove('active');
+                section.style.display = 'none'; // Hide inactive sections
             }
         });
 
@@ -78,20 +85,21 @@
     }
 
     function navigate(path) {
-        history.pushState({ path }, '', path);
-        updateView(path);
+        const url = `index.html?route=${path}`;
+        history.pushState({ path }, '', url);
+        updateView();
     }
 
     // Initial view based on current URL path
-    updateView(window.location.pathname);
+    updateView();
 
     // Handle browser back/forward
     window.addEventListener('popstate', (event) => {
         if (event.state && event.state.path) {
-            updateView(event.state.path);
+            updateView();
         } else {
             // Fallback for cases where state is null (e.g. initial page load, or manual URL change)
-            updateView(window.location.pathname);
+            updateView();
         }
     });
 
@@ -100,7 +108,8 @@
         link.addEventListener('click', (event) => {
             event.preventDefault();
             const path = link.getAttribute('data-path');
-            if (path !== window.location.pathname) {
+            const currentPath = new URLSearchParams(window.location.search).get('route') || '/';
+            if (path !== currentPath) {
                 navigate(path);
             }
         });
@@ -109,7 +118,7 @@
     // Expose navigate function globally for other scripts to use
     window.router = {
         navigate: navigate,
-        getCurrentPath: () => window.location.pathname
+        getCurrentPath: () => new URLSearchParams(window.location.search).get('route') || '/'
     };
 
 })();

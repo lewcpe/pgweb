@@ -252,7 +252,7 @@
 
     // Initial load if this section is active (e.g. direct navigation to a DB manage URL)
     if (section && section.classList.contains('active')) {
-        const path = window.location.pathname;
+        const path = window.router.getCurrentPath();
         if (path.startsWith('/databases/') && path.endsWith('/manage')) {
             const pathParts = path.split('/');
             const dbId = pathParts[2];

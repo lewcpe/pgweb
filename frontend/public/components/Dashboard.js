@@ -51,8 +51,10 @@
     }
 
     function renderDatabases() {
-        if (databases.length === 0) {
-            dashboardDbList.innerHTML = '<p>No databases found. Create one!</p>';
+        const activeDatabases = databases.filter(db => db.status !== 'soft_deleted');
+
+        if (activeDatabases.length === 0) {
+            dashboardDbList.innerHTML = '<p>No active databases found. Create one!</p>';
             return;
         }
 
@@ -70,7 +72,7 @@
             </tbody>
         `;
         const tbody = table.querySelector('tbody');
-        databases.forEach(db => {
+        activeDatabases.forEach(db => {
             const tr = document.createElement('tr');
             tr.setAttribute('data-dbid', db.database_id); // For easier row removal
             tr.innerHTML = `
@@ -195,6 +197,11 @@
     document.addEventListener('viewchanged', (event) => {
         if (event.detail.sectionId === 'dashboard-section') {
             fetchDatabases();
+        } else {
+            // When navigating away, clear the dashboard content to prevent it from showing on other pages.
+            dashboardDbList.innerHTML = '';
+            displayError('dashboard-error', '');
+            displayDashboardSuccess('');
         }
     });
 
