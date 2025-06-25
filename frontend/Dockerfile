@@ -2,8 +2,8 @@
 FROM nginx:alpine
 
 # Set working directory for Nginx
-WORKDIR /usr/share/nginx/html
-
+#WORKDIR /usr/share/nginx/html
+WORKDIR /etc/nginx/html
 # Remove default Nginx static assets
 RUN rm -rf ./*
 

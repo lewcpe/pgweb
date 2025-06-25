@@ -59,7 +59,7 @@
             displaySuccess('create-db-form-success', `Database "${newDb.pg_database_name || newDb.name}" created successfully! Status: ${newDb.status}`);
             dbNameInput.value = ''; // Clear the form
             // Optionally navigate away, e.g., to the new DB's detail page or list
-            // window.router.navigate('/databases');
+            window.router.navigate('/');
         } catch (err) {
             console.error("Failed to create database:", err);
             displayError('create-db-form-error', `Failed to create database: ${err.message}`);
@@ -77,7 +77,7 @@
     }
 
     cancelButton.addEventListener('click', () => {
-        window.router.navigate('/databases'); // Or to dashboard, depending on preference
+        window.router.navigate('/'); // Or to dashboard, depending on preference
     });
 
     document.addEventListener('viewchanged', (event) => {

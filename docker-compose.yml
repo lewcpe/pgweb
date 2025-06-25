@@ -51,13 +51,11 @@ services:
 
   frontend:
     build:
-      context: ./frontend # Assuming frontend code is in a 'frontend' subdirectory
-      dockerfile: Dockerfile # Dockerfile for Vite/Svelte app
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: pgweb_frontend
     ports:
-      - "80:80"   # Host 5173 maps to Nginx container port 80
-                 # The frontend Dockerfile currently uses Nginx on port 80.
-                 # So this should map host 5173 to container 80 if using Nginx.
+      - "80:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf
     depends_on:
