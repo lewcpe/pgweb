@@ -4,37 +4,56 @@
     const navLinks = document.querySelectorAll('nav a[data-path]');
 
     function updateView(path) {
-        // Default to dashboard if path is empty or just "/"
+        // Default to 'My Databases' (dashboard-section) if path is empty or just "/"
         if (path === '' || path === '/') {
-            path = '/'; // Or map to a default section like 'dashboard-section'
+            path = '/';
         }
 
         let targetSectionId = '';
         let pageTitle = 'PostgreSQL Self-Service';
+        let detailId = null; // To store extracted ID for detail/manage pages
 
-        // Simple routing logic based on path
-        if (path === '/') {
-            targetSectionId = 'dashboard-section';
-            pageTitle = 'Dashboard | PostgreSQL Self-Service';
-        } else if (path === '/databases') {
-            targetSectionId = 'databaselist-section';
+        // New routing logic
+        if (path === '/') { // Main page: lists all user's databases
+            targetSectionId = 'dashboard-section'; // This is now the main list of DBs
             pageTitle = 'My Databases | PostgreSQL Self-Service';
-        } else if (path.startsWith('/databases/') && path.endsWith('/new')) {
+        } else if (path === '/databases/new') { // Page to create a new database
             targetSectionId = 'databasecreateform-section';
-            pageTitle = 'Create Database | PostgreSQL Self-Service';
+            pageTitle = 'Create New Database | PostgreSQL Self-Service';
+        } else if (path.startsWith('/databases/') && path.endsWith('/manage')) { // Page to manage a specific database (details and users)
+            targetSectionId = 'databasemanage-section';
+            const pathParts = path.split('/');
+            detailId = pathParts[2]; // Assumes path like /databases/{id}/manage
+            pageTitle = `Manage Database | PostgreSQL Self-Service`;
         } else if (path.startsWith('/databases/')) {
-            targetSectionId = 'databasedetail-section';
-            const dbId = path.split('/')[2]; // Assumes path like /databases/{id}
-            // We'll need to pass dbId to the rendering function for this section
-            // For now, just show the section. Data loading will be handled by its specific JS.
-            pageTitle = `Database Details | PostgreSQL Self-Service`;
-            // The DatabaseDetail.js will extract the ID from the path itself.
-        } else {
-            // Fallback for unknown paths - could be a 404 section or redirect to dashboard
-            console.warn(`Unknown path: ${path}. Redirecting to dashboard.`);
-            path = '/';
+            // Fallback for old /databases/{id} path, redirect to /databases/{id}/manage
+            // Or, decide if this path should show a simplified view or error.
+            // For now, let's redirect to the new manage path.
+            const pathParts = path.split('/');
+            const dbId = pathParts[2];
+            if (dbId && dbId !== 'new') { // Ensure it's an ID and not the 'new' keyword
+                const newPath = `/databases/${dbId}/manage`;
+                history.replaceState({ path: newPath }, '', newPath); // Update URL
+                updateView(newPath); // Recurse with the new path
+                return; // Important: exit current updateView call
+            } else {
+                // If it's /databases/ or an invalid sub-path, redirect to main page
+                console.warn(`Invalid or old database path: ${path}. Redirecting to My Databases.`);
+                history.replaceState({ path: '/' }, '', '/');
+                updateView('/');
+                return;
+            }
+        }
+        // Note: The old '/databases' path (which showed databaselist-section) is removed.
+        // The nav link for it was also removed in index.html.
+        // If a user manually types /databases, it will be caught by the startsWith('/databases/')
+        // and redirected to '/' if it doesn't match /databases/:id/manage or /databases/new.
+        else {
+            // Fallback for any other unknown paths
+            console.warn(`Unknown path: ${path}. Redirecting to My Databases.`);
+            path = '/'; // Set path to default for event dispatch
             targetSectionId = 'dashboard-section';
-            pageTitle = 'Dashboard | PostgreSQL Self-Service';
+            pageTitle = 'My Databases | PostgreSQL Self-Service';
             history.replaceState({ path: '/' }, '', '/'); // Update URL without new history entry
         }
 
@@ -48,14 +67,12 @@
             }
         });
 
-        // Dispatch a custom event that components can listen to, to trigger data loading etc.
-        // Pass the path and any params (like dbId)
-        const detailId = path.startsWith('/databases/') && !path.endsWith('/new') ? path.split('/')[2] : null;
+        // Dispatch a custom event that components can listen to
         document.dispatchEvent(new CustomEvent('viewchanged', {
             detail: {
-                path: path, // current logical path
+                path: path, // current logical path (could be the original or the redirected one)
                 sectionId: targetSectionId, // DOM ID of the section shown
-                id: detailId // e.g. database_id for detail view
+                id: detailId // e.g. database_id for manage view
             }
         }));
     }
