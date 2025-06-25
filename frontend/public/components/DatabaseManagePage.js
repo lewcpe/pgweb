@@ -38,7 +38,7 @@
             renderDatabaseDetails();
             renderPgUsersTable();
         } catch (err) {
-            console.error(`Error loading details for database ${databaseId}:`, err);
+            console.error('Error loading details for database %s:', databaseId, err);
             displayError(errorIndicator.id, `Error loading details: ${err.message || 'Unknown error'}`);
             dbManageName.textContent = 'Database Management'; // Reset title
         } finally {
