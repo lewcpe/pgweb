@@ -55,35 +55,16 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
-    container_name: pgweb_dev_frontend
+      context: ./frontend # Assuming frontend code is in a 'frontend' subdirectory
+      dockerfile: Dockerfile # Dockerfile for Vite/Svelte app
+    container_name: pgweb_frontend
     ports:
-      - "5173:5173"
+      - "80:80"   # Host 5173 maps to Nginx container port 80
+                 # The frontend Dockerfile currently uses Nginx on port 80.
+                 # So this should map host 5173 to container 80 if using Nginx.
     volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/index.html:/app/index.html
-      - ./frontend/postcss.config.js:/app/postcss.config.js
-      - ./frontend/svelte.config.js:/app/svelte.config.js
-      - ./frontend/tailwind.config.js:/app/tailwind.config.js
-      - ./frontend/test-rendering.js:/app/test-rendering.js
-      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./nginx.dev.conf:/etc/nginx/nginx.conf
+      - ./frontend/public:/etc/nginx/html
     depends_on:
-      backend:
-        condition: service_healthy
-    #command: ls -al
-    environment:
-      VITE_API_BASE_URL: "http://localhost/api"
-
-  nginx:
-    image: nginx:latest
-    container_name: pgweb_dev_nginx
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx.dev.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      frontend:
-        condition: service_started
-      backend:
-        condition: service_healthy
+      - backend
+    restart: unless-stopped

@@ -109,7 +109,7 @@
                 if (confirm(`Are you sure you want to regenerate the password for ${username}?`)) {
                     try {
                         const result = await window.api.regeneratePGUserPassword(currentDbId, userId);
-                        displaySuccess('pg-user-success', `New password for ${username}: ${result.password}. Please save it securely.`);
+                        displaySuccess('pg-user-success', `New password for ${username}: ${result.new_password}. Please save it securely.`);
                         // No need to refetch users, list doesn't show password
                     } catch (err) {
                         console.error("Error regenerating password:", err);
