@@ -34,3 +34,5 @@ node_modules/
 dist/
 screenshots/
 videos/
+tmp/main
+backend/tmp/main

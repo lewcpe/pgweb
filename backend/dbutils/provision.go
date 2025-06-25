@@ -326,6 +326,48 @@ func RegeneratePostgresUserPassword(pgAdminDSN, targetDbName, pgUserName string)
 	return newGeneratedPassword, nil
 }
 
+// DeletePostgresUser drops a PostgreSQL user and revokes their privileges.
+func DeletePostgresUser(pgAdminDSN, targetDbName, pgUserName string) error {
+	log.Printf("Attempting to delete user %s from database %s", pgUserName, targetDbName)
+
+	safePgUserName, err := sanitizeIdentifier(pgUserName)
+	if err != nil {
+		return fmt.Errorf("invalid PostgreSQL username '%s' for deletion: %w", pgUserName, err)
+	}
+
+	targetDbDSN := getSpecificDatabaseDSN(pgAdminDSN, targetDbName)
+	db, err := connectToDB(targetDbDSN)
+	if err != nil {
+		return fmt.Errorf("failed to connect to target database %s for user deletion: %w", targetDbName, err)
+	}
+	defer db.Close()
+
+	// Reassign and drop ownership before revoking other privileges.
+	reassignSQL := fmt.Sprintf("REASSIGN OWNED BY %s TO postgres", safePgUserName) // Reassign to a default superuser
+	if _, err := db.Exec(reassignSQL); err != nil {
+		log.Printf("Warning: could not reassign ownership from %s: %v", safePgUserName, err)
+	}
+	dropOwnedSQL := fmt.Sprintf("DROP OWNED BY %s", safePgUserName)
+	if _, err := db.Exec(dropOwnedSQL); err != nil {
+		log.Printf("Warning: could not drop objects owned by %s: %v", safePgUserName, err)
+	}
+
+	// Revoke all privileges from the user on the database.
+	revokeSQL := fmt.Sprintf("REVOKE ALL PRIVILEGES ON DATABASE %s FROM %s", targetDbName, safePgUserName)
+	if _, err := db.Exec(revokeSQL); err != nil {
+		log.Printf("Warning: failed to revoke all privileges for user %s: %v", safePgUserName, err)
+	}
+
+	// Finally, drop the user.
+	dropUserSQL := fmt.Sprintf("DROP USER IF EXISTS %s", safePgUserName)
+	if _, err := db.Exec(dropUserSQL); err != nil {
+		return fmt.Errorf("failed to drop user %s: %w", safePgUserName, err)
+	}
+
+	log.Printf("User %s deleted successfully from database %s.", safePgUserName, targetDbName)
+	return nil
+}
+
 // SoftDeletePostgresDatabase revokes user privileges on a database.
 func SoftDeletePostgresDatabase(pgAdminDSN, dbName string, pgUsers []models.ManagedPGUser) error {
 	log.Printf("Attempting to soft delete database (revoke access): %s", dbName)
