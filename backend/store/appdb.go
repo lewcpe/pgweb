@@ -139,12 +139,16 @@ func GetApplicationUserByOIDCSub(oidcSub string) (*models.ApplicationUser, error
 	}
 	query := `SELECT internal_user_id, oidc_sub, email, created_at, updated_at FROM application_users WHERE oidc_sub = $1`
 	user := &models.ApplicationUser{}
-	err := AppDB.QueryRow(query, oidcSub).Scan(&user.InternalUserID, &user.OIDCSub, &user.Email, &user.CreatedAt, &user.UpdatedAt)
+	var nullableOIDCSub sql.NullString
+	err := AppDB.QueryRow(query, oidcSub).Scan(&user.InternalUserID, &nullableOIDCSub, &user.Email, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, sql.ErrNoRows
 		}
 		return nil, fmt.Errorf("error querying application user by oidc_sub %s: %w", oidcSub, err)
+	}
+	if nullableOIDCSub.Valid {
+		user.OIDCSub = nullableOIDCSub.String
 	}
 	return user, nil
 }
@@ -158,12 +162,16 @@ func GetApplicationUserByEmail(email string) (*models.ApplicationUser, error) {
 	}
 	query := `SELECT internal_user_id, oidc_sub, email, created_at, updated_at FROM application_users WHERE email = $1`
 	user := &models.ApplicationUser{}
-	err := AppDB.QueryRow(query, email).Scan(&user.InternalUserID, &user.OIDCSub, &user.Email, &user.CreatedAt, &user.UpdatedAt)
+	var nullableOIDCSub sql.NullString
+	err := AppDB.QueryRow(query, email).Scan(&user.InternalUserID, &nullableOIDCSub, &user.Email, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, sql.ErrNoRows
 		}
 		return nil, fmt.Errorf("error querying application user by email %s: %w", email, err)
+	}
+	if nullableOIDCSub.Valid {
+		user.OIDCSub = nullableOIDCSub.String
 	}
 	return user, nil
 }
@@ -180,8 +188,16 @@ func CreateApplicationUser(user *models.ApplicationUser) error {
 	}
 	user.CreatedAt = time.Now()
 	user.UpdatedAt = time.Now()
+
+	var oidcSub sql.NullString
+	if user.OIDCSub != "" {
+		oidcSub = sql.NullString{String: user.OIDCSub, Valid: true}
+	} else {
+		oidcSub = sql.NullString{Valid: false}
+	}
+
 	query := `INSERT INTO application_users (internal_user_id, oidc_sub, email, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`
-	_, err := AppDB.Exec(query, user.InternalUserID, user.OIDCSub, user.Email, user.CreatedAt, user.UpdatedAt)
+	_, err := AppDB.Exec(query, user.InternalUserID, oidcSub, user.Email, user.CreatedAt, user.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("error creating application user with oidc_sub %s: %w", user.OIDCSub, err)
 	}
@@ -287,6 +303,20 @@ func CheckIfPGDatabaseNameExists(name string) (bool, error) {
 		return false, fmt.Errorf("error checking existence of pg_database_name %s: %w", name, err)
 	}
 	return exists, nil
+}
+
+// CheckIfManagedDatabaseExists checks if a managed database record exists by its UUID.
+func CheckIfManagedDatabaseExists(databaseID uuid.UUID) (bool, error) {
+    if AppDB == nil {
+        return false, errors.New("database not initialized")
+    }
+    query := `SELECT EXISTS(SELECT 1 FROM managed_databases WHERE database_id = $1)`
+    var exists bool
+    err := AppDB.QueryRow(query, databaseID).Scan(&exists)
+    if err != nil {
+        return false, fmt.Errorf("error checking existence of database_id %s: %w", databaseID, err)
+    }
+    return exists, nil
 }
 
 // --- ManagedPGUser CRUD & related functions ---

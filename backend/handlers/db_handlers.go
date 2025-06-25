@@ -145,10 +145,25 @@ func GetDatabaseHandler(c *gin.Context) {
 		return
 	}
 
+	// First, check if the database exists at all, without respect to ownership.
+    // This is to distinguish between a 404 (doesn't exist) and a 403 (not your resource).
+    exists, err := store.CheckIfManagedDatabaseExists(databaseID)
+    if err != nil {
+        log.Printf("Error checking existence of database %s: %v", databaseID, err)
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check database existence"})
+        return
+    }
+    if !exists {
+        c.JSON(http.StatusNotFound, gin.H{"error": "Database not found"})
+        return
+    }
+
+    // Now, attempt to get it with the owner check. If this fails, it must be a permissions issue.
 	db, err := store.GetManagedDatabaseByID(databaseID, currentUser.InternalUserID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Database not found or not owned by user"})
+            // Since we know the DB exists, this error means the user does not own it.
+			c.JSON(http.StatusForbidden, gin.H{"error": "You do not have permission to access this database"})
 			return
 		}
 		log.Printf("Error getting database %s for user %s: %v", databaseID, currentUser.InternalUserID, err)
@@ -174,11 +189,24 @@ func DeleteDatabaseHandler(c *gin.Context) {
 		return
 	}
 
-	// 1. Fetch ManagedDatabase details (ensures ownership and gets PGDatabaseName)
+	// 1. Check for existence to distinguish 404 from 403
+    exists, err := store.CheckIfManagedDatabaseExists(databaseID)
+    if err != nil {
+        log.Printf("Error checking existence of database %s for deletion: %v", databaseID, err)
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check database existence"})
+        return
+    }
+    if !exists {
+        c.JSON(http.StatusNotFound, gin.H{"error": "Database not found"})
+        return
+    }
+
+	// 2. Fetch ManagedDatabase details (ensures ownership and gets PGDatabaseName)
 	managedDB, err := store.GetManagedDatabaseByID(databaseID, currentUser.InternalUserID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Database not found or not owned by user"})
+            // Since we know it exists, this is a permissions error
+			c.JSON(http.StatusForbidden, gin.H{"error": "You do not have permission to delete this database"})
 			return
 		}
 		log.Printf("Error fetching database %s for deletion by user %s: %v", databaseID, currentUser.InternalUserID, err)
