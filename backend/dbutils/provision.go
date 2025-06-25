@@ -311,8 +311,13 @@ func RegeneratePostgresUserPassword(pgAdminDSN, targetDbName, pgUserName string)
 	}
 	defer db.Close()
 
-	alterUserSQL := fmt.Sprintf("ALTER USER %s WITH PASSWORD $1", safePgUserName)
-	_, err = db.Exec(alterUserSQL, newGeneratedPassword)
+	// The password must be properly quoted to be included in the DDL statement.
+	// Using a parameterized query for the password in an ALTER USER is not standard.
+	// QuoteLiteral handles escaping correctly.
+	quotedPassword := pq.QuoteLiteral(newGeneratedPassword)
+	alterUserSQL := fmt.Sprintf("ALTER USER %s WITH PASSWORD %s", safePgUserName, quotedPassword)
+
+	_, err = db.Exec(alterUserSQL)
 	if err != nil {
 		return "", fmt.Errorf("failed to alter user %s password: %w", safePgUserName, err)
 	}

@@ -55,12 +55,11 @@ services:
       dockerfile: Dockerfile # Dockerfile for Vite/Svelte app
     container_name: pgweb_frontend
     ports:
-      - "5173:80"   # Host 5173 maps to Nginx container port 80
+      - "80:80"   # Host 5173 maps to Nginx container port 80
                  # The frontend Dockerfile currently uses Nginx on port 80.
                  # So this should map host 5173 to container 80 if using Nginx.
-    environment:
-      VITE_API_BASE_URL: "http://localhost:8080/api" # For calls from user's browser to backend
-      VITE_OIDC_LOGIN_URL: "http://localhost:8080/auth/oidc/login"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
     depends_on:
       - backend
     restart: unless-stopped

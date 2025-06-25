@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PostgreSQL Self-Service</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>PostgreSQL Self-Service</h1>
+        <nav>
+            <a data-path="/">Dashboard</a> |
+            <a data-path="/databases">Databases</a>
+            <!-- User info and logout will be implicitly handled by oauth2-proxy behavior,
+                 or we might add a link to the oauth2-proxy sign_out endpoint later -->
+        </nav>
+    </header>
+
+    <div class="container">
+        <!-- Content Sections -->
+        <section id="dashboard-section" class="content-section">
+            <h2>My Databases (Dashboard View)</h2>
+            <button id="show-create-db-modal-dashboard">Create New Database</button>
+            <div id="dashboard-db-list">
+                <!-- Database list will be rendered here -->
+            </div>
+            <p id="dashboard-loading" style="display:none;">Loading databases...</p>
+            <p id="dashboard-error" class="error" style="display:none;"></p>
+        </section>
+
+        <section id="databaselist-section" class="content-section">
+            <h2>My Databases</h2>
+            <button id="goto-create-db-form">Create New Database</button>
+            <div id="databaselist-table-container">
+                <!-- Database table will be rendered here -->
+            </div>
+            <p id="databaselist-loading" style="display:none;">Loading databases...</p>
+            <p id="databaselist-error" class="error" style="display:none;"></p>
+        </section>
+
+        <section id="databasedetail-section" class="content-section">
+            <h2 id="db-detail-name">Database Details</h2>
+            <button id="back-to-db-list">Back to Databases</button>
+            <div id="db-detail-content">
+                <!-- DB details will be rendered here -->
+            </div>
+            <p id="db-detail-loading" style="display:none;">Loading details...</p>
+            <p id="db-detail-error" class="error" style="display:none;"></p>
+
+            <h3>PostgreSQL Users</h3>
+            <button id="show-create-pg-user-modal">Create New PG User</button>
+            <p id="pg-user-error" class="error" style="display:none;"></p>
+            <p id="pg-user-success" class="success" style="display:none;"></p>
+            <div id="pg-users-table-container">
+                <!-- PG Users table will be rendered here -->
+            </div>
+        </section>
+
+        <section id="databasecreateform-section" class="content-section">
+            <h2>Create New Database</h2>
+            <form id="create-db-form">
+                <div>
+                    <label for="dbNameInput">Database Name:</label>
+                    <input type="text" id="dbNameInput" name="dbName" required>
+                    <p id="db-name-error" class="error" style="display:none;"></p>
+                </div>
+                <button type="submit" id="create-db-submit">Create Database</button>
+                <button type="button" id="cancel-create-db">Cancel</button>
+                <p id="create-db-form-error" class="error" style="display:none;"></p>
+                <p id="create-db-form-success" class="success" style="display:none;"></p>
+            </form>
+        </section>
+    </div>
+
+    <!-- Modals -->
+    <div id="create-db-modal-dashboard-container" class="modal">
+        <div class="modal-content">
+            <h3>Create New Database (Dashboard)</h3>
+            <form id="create-db-form-modal-dashboard">
+                <input type="text" id="newDbNameDashboard" placeholder="Enter database name" required>
+                <p id="create-db-modal-dashboard-error" class="error" style="display:none;"></p>
+                <button type="submit">Create</button>
+                <button type="button" class="cancel-modal">Cancel</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="create-pg-user-modal-container" class="modal">
+        <div class="modal-content">
+            <h3>Create New PostgreSQL User</h3>
+            <form id="create-pg-user-form">
+                <input type="hidden" id="pgUserDbId"> <!-- To store current DB ID -->
+                <div>
+                    <label for="pgUsernameInput">Username:</label>
+                    <input type="text" id="pgUsernameInput" name="pgUsername" required>
+                </div>
+                <div>
+                    <label for="pgUserPermissionInput">Permission Level:</label>
+                    <select id="pgUserPermissionInput" name="pgUserPermission">
+                        <option value="read">Read-only</option>
+                        <option value="write">Read/Write</option>
+                    </select>
+                </div>
+                <p id="create-pg-user-modal-error" class="error" style="display:none;"></p>
+                <button type="submit">Create User</button>
+                <button type="button" class="cancel-modal">Cancel</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="api.js"></script>
+    <script src="router.js"></script>
+    <script src="app.js"></script>
+    <!-- Individual page/component scripts can be added here or loaded by app.js -->
+    <script src="components/Dashboard.js"></script>
+    <script src="components/DatabaseList.js"></script>
+    <script src="components/DatabaseDetail.js"></script>
+    <script src="components/DatabaseCreateForm.js"></script>
+
+</body>
+</html>
