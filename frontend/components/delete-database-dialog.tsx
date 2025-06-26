@@ -14,20 +14,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, AlertTriangle } from "lucide-react"
-
-interface DatabaseDetails {
-  id: string
-  name: string
-  status: "active" | "pending_creation" | "error"
-  createdAt: string
-  owner: string
-  description?: string
-}
+import { deleteDatabase } from "@/lib/api"
+import { DatabaseDetails } from "@/types/types"
 
 interface DeleteDatabaseDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  database: DatabaseDetails
+  database: DatabaseDetails | null
   onDatabaseDeleted: () => void
 }
 
@@ -36,7 +29,7 @@ export function DeleteDatabaseDialog({ open, onOpenChange, database, onDatabaseD
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
-  const isConfirmationValid = confirmationText === database.name
+  const isConfirmationValid = confirmationText === database?.pg_database_name
 
   const handleDelete = async () => {
     if (!isConfirmationValid) return
@@ -45,10 +38,10 @@ export function DeleteDatabaseDialog({ open, onOpenChange, database, onDatabaseD
       setLoading(true)
       setError("")
 
-      // Mock API call - replace with actual API
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
-      onDatabaseDeleted()
+      if (database) {
+        await deleteDatabase(database.database_id)
+        onDatabaseDeleted()
+      }
     } catch (error) {
       setError("Failed to delete database. Please try again.")
     } finally {
@@ -83,20 +76,20 @@ export function DeleteDatabaseDialog({ open, onOpenChange, database, onDatabaseD
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              <strong>Warning:</strong> This will permanently delete the database "{database.name}" and all its data.
+              <strong>Warning:</strong> This will permanently delete the database "{database?.pg_database_name}" and all its data.
               This action cannot be undone.
             </AlertDescription>
           </Alert>
 
           <div className="space-y-2">
             <Label htmlFor="confirmation">
-              Type <strong>{database.name}</strong> to confirm deletion
+              Type <strong>{database?.pg_database_name}</strong> to confirm deletion
             </Label>
             <Input
               id="confirmation"
               value={confirmationText}
               onChange={(e) => setConfirmationText(e.target.value)}
-              placeholder={database.name}
+              placeholder={database?.pg_database_name}
               disabled={loading}
             />
           </div>

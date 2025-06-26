@@ -7,35 +7,22 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useToast } from "@/components/ui/use-toast"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { CreatePgUserDialog } from "@/components/create-pguser-dialog"
 import { RegeneratePasswordDialog } from "@/components/regenerate-password-dialog"
 import { DeleteDatabaseDialog } from "@/components/delete-database-dialog"
 import { DeletePgUserDialog } from "@/components/delete-pguser-dialog"
-
-interface DatabaseDetails {
-  id: string
-  name: string
-  status: "active" | "pending_creation" | "error"
-  createdAt: string
-  owner: string
-  description?: string
-}
-
-interface PgUser {
-  id: string
-  username: string
-  permission: "read" | "write"
-  status: "active" | "pending"
-  createdAt: string
-}
+import { getDatabaseDetails, getPgUsers } from "@/lib/api"
+import { DatabaseDetails, PgUser, PgUserWithPassword } from "@/types/types"
 
 export default function DatabaseDetailPage() {
   const params = useParams()
   const router = useRouter()
   const databaseId = params.id as string
 
+  const { toast } = useToast()
   const [database, setDatabase] = useState<DatabaseDetails | null>(null)
   const [pgUsers, setPgUsers] = useState<PgUser[]>([])
   const [loading, setLoading] = useState(true)
@@ -59,19 +46,8 @@ export default function DatabaseDetailPage() {
   const fetchDatabaseDetails = async () => {
     try {
       setLoading(true)
-      // Mock API call - replace with actual API
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      const mockDatabase: DatabaseDetails = {
-        id: databaseId,
-        name: `database-${databaseId}`,
-        status: "active",
-        createdAt: "2024-01-15T10:30:00Z",
-        owner: "john.doe@example.com",
-        description: "Production database for the main application",
-      }
-
-      setDatabase(mockDatabase)
+      const data = await getDatabaseDetails(databaseId)
+      setDatabase(data)
     } catch (error) {
       console.error("Failed to fetch database details:", error)
     } finally {
@@ -82,34 +58,8 @@ export default function DatabaseDetailPage() {
   const fetchPgUsers = async () => {
     try {
       setPgUsersLoading(true)
-      // Mock API call - replace with actual API
-      await new Promise((resolve) => setTimeout(resolve, 800))
-
-      const mockPgUsers: PgUser[] = [
-        {
-          id: "1",
-          username: "app_user",
-          permission: "write",
-          status: "active",
-          createdAt: "2024-01-15T11:00:00Z",
-        },
-        {
-          id: "2",
-          username: "readonly_user",
-          permission: "read",
-          status: "active",
-          createdAt: "2024-01-16T09:30:00Z",
-        },
-        {
-          id: "3",
-          username: "analytics_user",
-          permission: "read",
-          status: "pending",
-          createdAt: "2024-01-20T14:15:00Z",
-        },
-      ]
-
-      setPgUsers(mockPgUsers)
+      const data = await getPgUsers(databaseId)
+      setPgUsers(data)
     } catch (error) {
       console.error("Failed to fetch PostgreSQL users:", error)
     } finally {
@@ -117,9 +67,18 @@ export default function DatabaseDetailPage() {
     }
   }
 
-  const handleUserCreated = (newUser: PgUser) => {
+  const handleUserCreated = (newUser: PgUserWithPassword) => {
     setPgUsers((prev) => [newUser, ...prev])
     setCreateUserDialogOpen(false)
+
+    // Copy password to clipboard
+    navigator.clipboard.writeText(newUser.password)
+
+    // Show toast notification
+    toast({
+      title: "User Created Successfully",
+      description: `Password "${newUser.password}" for user ${newUser.pg_username} has been copied to your clipboard.`,
+    })
   }
 
   const handlePasswordRegenerated = (userId: string, newPassword: string) => {
@@ -128,7 +87,7 @@ export default function DatabaseDetailPage() {
   }
 
   const handleUserDeleted = (userId: string) => {
-    setPgUsers((prev) => prev.filter((user) => user.id !== userId))
+    setPgUsers((prev) => prev.filter((user) => user.pg_user_id !== userId))
     setDeletePgUserDialog({ open: false, user: null })
   }
 
@@ -214,7 +173,7 @@ export default function DatabaseDetailPage() {
             <div className="flex items-center gap-3">
               <h1 className="text-3xl font-bold flex items-center gap-2">
                 <Database className="h-8 w-8" />
-                {database.name}
+                {database.pg_database_name}
               </h1>
               <Badge variant="secondary" className={`${getStatusColor(database.status)} text-white`}>
                 <Activity className="h-3 w-3 mr-1" />
@@ -240,24 +199,18 @@ export default function DatabaseDetailPage() {
             <div className="flex items-center gap-2">
               <Database className="h-4 w-4 text-muted-foreground" />
               <span className="font-medium">Name:</span>
-              <span>{database.name}</span>
+              <span>{database.pg_database_name}</span>
             </div>
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-muted-foreground" />
               <span className="font-medium">Owner:</span>
-              <span>{database.owner}</span>
+              <span>{database.owner_user_id}</span>
             </div>
             <div className="flex items-center gap-2">
               <Calendar className="h-4 w-4 text-muted-foreground" />
               <span className="font-medium">Created:</span>
-              <span>{formatDate(database.createdAt)}</span>
+              <span>{formatDate(database.created_at)}</span>
             </div>
-            {database.description && (
-              <div>
-                <span className="font-medium">Description:</span>
-                <p className="text-muted-foreground mt-1">{database.description}</p>
-              </div>
-            )}
           </CardContent>
         </Card>
 
@@ -277,7 +230,7 @@ export default function DatabaseDetailPage() {
             </div>
             <div className="flex items-center justify-between">
               <span className="font-medium">Write Access:</span>
-              <Badge variant="secondary">{pgUsers.filter((u) => u.permission === "write").length}</Badge>
+              <Badge variant="secondary">{pgUsers.filter((u) => u.permission_level === "write").length}</Badge>
             </div>
           </CardContent>
         </Card>
@@ -326,17 +279,17 @@ export default function DatabaseDetailPage() {
               </TableHeader>
               <TableBody>
                 {pgUsers.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell className="font-medium">{user.username}</TableCell>
+                  <TableRow key={user.pg_user_id}>
+                    <TableCell className="font-medium">{user.pg_username}</TableCell>
                     <TableCell>
-                      <Badge variant={user.permission === "write" ? "default" : "secondary"}>{user.permission}</Badge>
+                      <Badge variant={user.permission_level === "write" ? "default" : "secondary"}>{user.permission_level}</Badge>
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary" className={`${getStatusColor(user.status)} text-white`}>
                         {getStatusText(user.status)}
                       </Badge>
                     </TableCell>
-                    <TableCell>{formatDate(user.createdAt)}</TableCell>
+                    <TableCell>{formatDate(user.created_at)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Button

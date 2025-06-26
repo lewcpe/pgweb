@@ -59,21 +59,15 @@ services:
       dockerfile: Dockerfile.dev
     container_name: pgweb_dev_frontend
     ports:
-      - "5173:5173"
+      - "3000:3000"
     volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/index.html:/app/index.html
-      - ./frontend/postcss.config.js:/app/postcss.config.js
-      - ./frontend/svelte.config.js:/app/svelte.config.js
-      - ./frontend/tailwind.config.js:/app/tailwind.config.js
-      - ./frontend/test-rendering.js:/app/test-rendering.js
-      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend:/app
+      - /app/node_modules
     depends_on:
       backend:
         condition: service_healthy
-    #command: ls -al
     environment:
-      VITE_API_BASE_URL: "http://localhost/api"
+      NEXT_PUBLIC_API_BASE_URL: "http://localhost/api"
 
   nginx:
     image: nginx:latest

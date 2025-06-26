@@ -14,14 +14,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, AlertCircle, Copy, Eye, EyeOff, Key } from "lucide-react"
-
-interface PgUser {
-  id: string
-  username: string
-  permission: "read" | "write"
-  status: "active" | "pending"
-  createdAt: string
-}
+import { regeneratePgUserPassword } from "@/lib/api"
+import { PgUser } from "@/types/types"
 
 interface RegeneratePasswordDialogProps {
   open: boolean
@@ -50,14 +44,9 @@ export function RegeneratePasswordDialog({
       setLoading(true)
       setError("")
 
-      // Mock API call - replace with actual API
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-
-      const generatedPassword =
-        Math.random().toString(36).slice(-12) + Math.random().toString(36).slice(-12).toUpperCase() + "456!"
-
-      setNewPassword(generatedPassword)
-      onPasswordRegenerated(user.id, generatedPassword)
+      const { newPassword } = await regeneratePgUserPassword(databaseId, user.pg_user_id)
+      setNewPassword(newPassword)
+      onPasswordRegenerated(user.pg_user_id, newPassword)
     } catch (error) {
       setError("Failed to regenerate password. Please try again.")
     } finally {
@@ -91,7 +80,7 @@ export function RegeneratePasswordDialog({
             Regenerate Password
           </DialogTitle>
           <DialogDescription>
-            Generate a new password for the PostgreSQL user "{user.username}". The old password will no longer work.
+            Generate a new password for the PostgreSQL user "{user.pg_username}". The old password will no longer work.
           </DialogDescription>
         </DialogHeader>
 
@@ -108,12 +97,12 @@ export function RegeneratePasswordDialog({
 
               <div className="space-y-2">
                 <Label>Username</Label>
-                <Input value={user.username} readOnly />
+                <Input value={user.pg_username} readOnly />
               </div>
 
               <div className="space-y-2">
                 <Label>Permission</Label>
-                <Input value={user.permission} readOnly />
+                <Input value={user.permission_level} readOnly />
               </div>
             </>
           ) : (
@@ -130,8 +119,8 @@ export function RegeneratePasswordDialog({
                 <div>
                   <Label>Username</Label>
                   <div className="flex items-center gap-2 mt-1">
-                    <Input value={user.username} readOnly />
-                    <Button variant="outline" size="icon" onClick={() => copyToClipboard(user.username)}>
+                    <Input value={user.pg_username} readOnly />
+                    <Button variant="outline" size="icon" onClick={() => copyToClipboard(user.pg_username)}>
                       <Copy className="h-4 w-4" />
                     </Button>
                   </div>

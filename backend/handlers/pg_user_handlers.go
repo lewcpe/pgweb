@@ -1,15 +1,15 @@
 package handlers
 
 import (
-	"pgweb-backend/auth"
-	"pgweb-backend/dbutils"
-	"pgweb-backend/models"
-	"pgweb-backend/store"
 	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"pgweb-backend/auth"
+	"pgweb-backend/dbutils"
+	"pgweb-backend/models"
+	"pgweb-backend/store"
 	"regexp"
 	"strings"
 
@@ -76,7 +76,6 @@ func CreatePGUserHandler(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("Database is not in active state (current state: %s)", managedDB.Status)})
 		return
 	}
-
 
 	var req CreatePGUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -162,18 +161,18 @@ func ListPGUsersHandler(c *gin.Context) {
 	pgUsers, err := store.GetManagedPGUsersByDatabaseIDAndOwner(databaseID, currentUser.InternalUserID)
 	if err != nil {
 		// Check if the error is because the database itself wasn't found or not owned
-        if strings.Contains(err.Error(), "database") && strings.Contains(err.Error(), "not found or not owned by user") {
-             c.JSON(http.StatusNotFound, gin.H{"error": "Managed database not found or not owned by user"})
-             return
-        }
+		if strings.Contains(err.Error(), "database") && strings.Contains(err.Error(), "not found or not owned by user") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Managed database not found or not owned by user"})
+			return
+		}
 		log.Printf("Error listing PG users for DB %s, owner %s: %v", databaseID, currentUser.InternalUserID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve PostgreSQL users"})
 		return
 	}
 
 	if pgUsers == nil { // Ensure we return an empty list, not null
-        pgUsers = []models.ManagedPGUser{}
-    }
+		pgUsers = []models.ManagedPGUser{}
+	}
 
 	// Passwords are not stored in ManagedPGUser model, so they are naturally omitted.
 	c.JSON(http.StatusOK, pgUsers)
@@ -215,15 +214,14 @@ func RegeneratePGPasswordHandler(c *gin.Context) {
 	}
 
 	// Ensure the fetched PG user actually belongs to the database_id from the path
-    if pgUser.ManagedDatabaseID != databaseID {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "PostgreSQL user does not belong to the specified database"})
-        return
-    }
-    if pgUser.Status != "active" {
-         c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("PostgreSQL user is not in active state (current state: %s)", pgUser.Status)})
-        return
-    }
-
+	if pgUser.ManagedDatabaseID != databaseID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "PostgreSQL user does not belong to the specified database"})
+		return
+	}
+	if pgUser.Status != "active" {
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("PostgreSQL user is not in active state (current state: %s)", pgUser.Status)})
+		return
+	}
 
 	// Fetch the actual PGDatabaseName from the ManagedDatabase record
 	managedDB, err := store.GetManagedDatabaseByID(pgUser.ManagedDatabaseID, currentUser.InternalUserID)
@@ -233,7 +231,6 @@ func RegeneratePGPasswordHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve parent database details"})
 		return
 	}
-
 
 	pgAdminDSN := os.Getenv("PG_ADMIN_DSN")
 	if pgAdminDSN == "" {
@@ -259,4 +256,78 @@ func RegeneratePGPasswordHandler(c *gin.Context) {
 		NewPassword: newPassword,
 	}
 	c.JSON(http.StatusOK, response)
+}
+
+// DeletePGUserHandler handles requests to delete a PostgreSQL user.
+func DeletePGUserHandler(c *gin.Context) {
+	currentUser := auth.GetUserFromSession(c)
+	if currentUser == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	databaseIDStr := c.Param("database_id")
+	databaseID, err := uuid.Parse(databaseIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database ID format"})
+		return
+	}
+
+	pgUserIDStr := c.Param("pg_user_id")
+	pgUserID, err := uuid.Parse(pgUserIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid PostgreSQL user ID format"})
+		return
+	}
+
+	// Verify ownership and get the PG user's details.
+	// This also ensures the user belongs to the specified database.
+	pgUser, err := store.GetManagedPGUserByID(pgUserID, currentUser.InternalUserID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "PostgreSQL user not found or parent database not owned by user"})
+			return
+		}
+		log.Printf("Error fetching PG user %s for deletion by user %s: %v", pgUserID, currentUser.InternalUserID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve PostgreSQL user details"})
+		return
+	}
+	if pgUser.ManagedDatabaseID != databaseID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "PostgreSQL user does not belong to the specified database"})
+		return
+	}
+
+	// Get the managed database to find the actual PG database name.
+	managedDB, err := store.GetManagedDatabaseByID(databaseID, currentUser.InternalUserID)
+	if err != nil {
+		log.Printf("Error fetching parent database %s for PG user deletion: %v", databaseID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve parent database details"})
+		return
+	}
+
+	pgAdminDSN := os.Getenv("PG_ADMIN_DSN")
+	if pgAdminDSN == "" {
+		log.Println("Error: PG_ADMIN_DSN not set for DeletePGUserHandler")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "PostgreSQL user deletion is not configured"})
+		return
+	}
+
+	// Delete the user from the PostgreSQL database.
+	if err := dbutils.DeletePostgresUser(pgAdminDSN, managedDB.PGDatabaseName, pgUser.PGUsername); err != nil {
+		log.Printf("Error deleting PG user %s from DB %s: %v", pgUser.PGUsername, managedDB.PGDatabaseName, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete PostgreSQL user from the database: " + err.Error()})
+		return
+	}
+
+	// Delete the user record from the application database.
+	if err := store.DeleteManagedPGUser(pgUserID); err != nil {
+		log.Printf("Error deleting ManagedPGUser record %s: %v", pgUserID, err)
+		// The user is deleted from the PG DB, but the record remains in our app DB.
+		// This is an inconsistent state that may need manual cleanup.
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete PostgreSQL user record from the application. Please contact support."})
+		return
+	}
+
+	log.Printf("PG User %s (ID: %s) in DB %s deleted by user %s", pgUser.PGUsername, pgUserID, managedDB.PGDatabaseName, currentUser.InternalUserID)
+	c.JSON(http.StatusNoContent, nil)
 }

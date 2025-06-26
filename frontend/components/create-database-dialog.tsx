@@ -16,19 +16,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, AlertCircle } from "lucide-react"
-
-interface Database {
-  id: string
-  name: string
-  status: "active" | "pending_creation" | "error"
-  createdAt: string
-  owner: string
-}
+import { createDatabase } from "@/lib/api"
+import { DatabaseDetails } from "@/types/types"
 
 interface CreateDatabaseDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onDatabaseCreated: (database: Database) => void
+  onDatabaseCreated: (database: DatabaseDetails) => void
 }
 
 export function CreateDatabaseDialog({ open, onOpenChange, onDatabaseCreated }: CreateDatabaseDialogProps) {
@@ -68,17 +62,7 @@ export function CreateDatabaseDialog({ open, onOpenChange, onDatabaseCreated }: 
       setLoading(true)
       setError("")
 
-      // Mock API call - replace with actual API
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
-      const newDatabase: Database = {
-        id: Date.now().toString(),
-        name: name.trim(),
-        status: "pending_creation",
-        createdAt: new Date().toISOString(),
-        owner: "john.doe@example.com",
-      }
-
+      const newDatabase = await createDatabase(name.trim())
       onDatabaseCreated(newDatabase)
       setName("")
     } catch (error) {

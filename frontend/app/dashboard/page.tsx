@@ -9,17 +9,11 @@ import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { CreateDatabaseDialog } from "@/components/create-database-dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-
-interface DatabaseType {
-  id: string
-  name: string
-  status: "active" | "pending_creation" | "error"
-  createdAt: string
-  owner: string
-}
+import { getDatabases } from "@/lib/api"
+import { DatabaseDetails } from "@/types/types"
 
 export default function DashboardPage() {
-  const [databases, setDatabases] = useState<DatabaseType[]>([])
+  const [databases, setDatabases] = useState<DatabaseDetails[]>([])
   const [loading, setLoading] = useState(true)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
 
@@ -30,32 +24,8 @@ export default function DashboardPage() {
   const fetchDatabases = async () => {
     try {
       setLoading(true)
-      // Mock API call - replace with actual API
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-      const mockDatabases: DatabaseType[] = [
-        {
-          id: "1",
-          name: "production-db",
-          status: "active",
-          createdAt: "2024-01-15T10:30:00Z",
-          owner: "john.doe@example.com",
-        },
-        {
-          id: "2",
-          name: "staging-db",
-          status: "active",
-          createdAt: "2024-01-10T14:20:00Z",
-          owner: "john.doe@example.com",
-        },
-        {
-          id: "3",
-          name: "test-db",
-          status: "pending_creation",
-          createdAt: "2024-01-20T09:15:00Z",
-          owner: "john.doe@example.com",
-        },
-      ]
-      setDatabases(mockDatabases)
+      const data = await getDatabases()
+      setDatabases(data)
     } catch (error) {
       console.error("Failed to fetch databases:", error)
     } finally {
@@ -63,12 +33,12 @@ export default function DashboardPage() {
     }
   }
 
-  const handleDatabaseCreated = (newDatabase: DatabaseType) => {
+  const handleDatabaseCreated = (newDatabase: DatabaseDetails) => {
     setDatabases((prev) => [newDatabase, ...prev])
     setCreateDialogOpen(false)
   }
 
-  const getStatusColor = (status: DatabaseType["status"]) => {
+  const getStatusColor = (status: DatabaseDetails["status"]) => {
     switch (status) {
       case "active":
         return "bg-green-500"
@@ -81,7 +51,7 @@ export default function DashboardPage() {
     }
   }
 
-  const getStatusText = (status: DatabaseType["status"]) => {
+  const getStatusText = (status: DatabaseDetails["status"]) => {
     switch (status) {
       case "active":
         return "Active"
@@ -163,11 +133,11 @@ export default function DashboardPage() {
               </TableHeader>
               <TableBody>
                 {databases.map((database) => (
-                  <TableRow key={database.id} className="cursor-pointer hover:bg-muted/50">
+                  <TableRow key={database.database_id} className="cursor-pointer hover:bg-muted/50">
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <DatabaseIcon className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-medium">{database.name}</span>
+                        <span className="font-medium">{database.pg_database_name}</span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -176,15 +146,15 @@ export default function DashboardPage() {
                         {getStatusText(database.status)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{database.owner}</TableCell>
+                    <TableCell className="text-muted-foreground">{database.owner_user_id}</TableCell>
                     <TableCell>
                       <div className="flex items-center text-sm text-muted-foreground">
                         <Calendar className="h-4 w-4 mr-2" />
-                        {formatDate(database.createdAt)}
+                        {formatDate(database.created_at)}
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Link href={`/databases/${database.id}`}>
+                      <Link href={`/databases/${database.database_id}`}>
                         <Button variant="outline" size="sm">
                           View Details
                         </Button>

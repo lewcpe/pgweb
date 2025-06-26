@@ -12,14 +12,8 @@ import {
 } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, AlertTriangle, Trash2 } from "lucide-react"
-
-interface PgUser {
-  id: string
-  username: string
-  permission: "read" | "write"
-  status: "active" | "pending"
-  createdAt: string
-}
+import { deletePgUser } from "@/lib/api"
+import { PgUser } from "@/types/types"
 
 interface DeletePgUserDialogProps {
   open: boolean
@@ -40,10 +34,8 @@ export function DeletePgUserDialog({ open, onOpenChange, user, onUserDeleted, da
       setLoading(true)
       setError("")
 
-      // Mock API call - replace with actual API
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-
-      onUserDeleted(user.id)
+      await deletePgUser(databaseId, user.pg_user_id)
+      onUserDeleted(user.pg_user_id)
       onOpenChange(false)
     } catch (error) {
       setError("Failed to delete user. Please try again.")
@@ -80,7 +72,7 @@ export function DeletePgUserDialog({ open, onOpenChange, user, onUserDeleted, da
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              <strong>Warning:</strong> Deleting the user "{user.username}" will permanently remove their access to the
+              <strong>Warning:</strong> Deleting the user "{user.pg_username}" will permanently remove their access to the
               database. Any applications using this user will lose connectivity.
             </AlertDescription>
           </Alert>
@@ -88,11 +80,11 @@ export function DeletePgUserDialog({ open, onOpenChange, user, onUserDeleted, da
           <div className="space-y-3 p-4 bg-muted rounded-lg">
             <div className="flex justify-between">
               <span className="font-medium">Username:</span>
-              <span>{user.username}</span>
+              <span>{user.pg_username}</span>
             </div>
             <div className="flex justify-between">
               <span className="font-medium">Permission:</span>
-              <span className="capitalize">{user.permission}</span>
+              <span className="capitalize">{user.permission_level}</span>
             </div>
             <div className="flex justify-between">
               <span className="font-medium">Status:</span>

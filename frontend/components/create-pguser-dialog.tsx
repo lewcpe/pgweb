@@ -17,19 +17,13 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, AlertCircle, Copy, Eye, EyeOff } from "lucide-react"
-
-interface PgUser {
-  id: string
-  username: string
-  permission: "read" | "write"
-  status: "active" | "pending"
-  createdAt: string
-}
+import { createPgUser } from "@/lib/api"
+import { PgUser, PgUserWithPassword } from "@/types/types"
 
 interface CreatePgUserDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onUserCreated: (user: PgUser) => void
+  onUserCreated: (user: PgUserWithPassword) => void
   databaseId: string
 }
 
@@ -38,10 +32,7 @@ export function CreatePgUserDialog({ open, onOpenChange, onUserCreated, database
   const [permission, setPermission] = useState<"read" | "write">("read")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const [createdUser, setCreatedUser] = useState<{
-    user: PgUser
-    password: string
-  } | null>(null)
+  const [createdUser, setCreatedUser] = useState<PgUserWithPassword | null>(null)
   const [showPassword, setShowPassword] = useState(false)
 
   const validateUsername = (username: string): string | null => {
@@ -73,21 +64,8 @@ export function CreatePgUserDialog({ open, onOpenChange, onUserCreated, database
       setLoading(true)
       setError("")
 
-      // Mock API call - replace with actual API
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
-      const newUser: PgUser = {
-        id: Date.now().toString(),
-        username: username.trim(),
-        permission,
-        status: "active",
-        createdAt: new Date().toISOString(),
-      }
-
-      const generatedPassword =
-        Math.random().toString(36).slice(-12) + Math.random().toString(36).slice(-12).toUpperCase() + "123!"
-
-      setCreatedUser({ user: newUser, password: generatedPassword })
+      const newUser = await createPgUser(databaseId, username.trim(), permission)
+      setCreatedUser(newUser)
       onUserCreated(newUser)
     } catch (error) {
       setError("Failed to create user. Please try again.")
@@ -135,8 +113,8 @@ export function CreatePgUserDialog({ open, onOpenChange, onUserCreated, database
               <div>
                 <Label>Username</Label>
                 <div className="flex items-center gap-2 mt-1">
-                  <Input value={createdUser.user.username} readOnly />
-                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(createdUser.user.username)}>
+                  <Input value={createdUser.pg_username} readOnly />
+                  <Button variant="outline" size="icon" onClick={() => copyToClipboard(createdUser.pg_username)}>
                     <Copy className="h-4 w-4" />
                   </Button>
                 </div>
@@ -157,7 +135,7 @@ export function CreatePgUserDialog({ open, onOpenChange, onUserCreated, database
 
               <div>
                 <Label>Permission</Label>
-                <Input value={createdUser.user.permission} readOnly className="mt-1" />
+                <Input value={createdUser.permission_level} readOnly className="mt-1" />
               </div>
             </div>
           </div>
