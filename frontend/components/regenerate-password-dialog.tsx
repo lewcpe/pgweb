@@ -44,9 +44,9 @@ export function RegeneratePasswordDialog({
       setLoading(true)
       setError("")
 
-      const { newPassword } = await regeneratePgUserPassword(databaseId, user.pg_user_id)
-      setNewPassword(newPassword)
-      onPasswordRegenerated(user.pg_user_id, newPassword)
+      const { new_password } = await regeneratePgUserPassword(databaseId, user.pg_user_id)
+      setNewPassword(new_password)
+      onPasswordRegenerated(user.pg_user_id, new_password)
     } catch (error) {
       setError("Failed to regenerate password. Please try again.")
     } finally {

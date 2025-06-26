@@ -84,6 +84,13 @@ export default function DatabaseDetailPage() {
   const handlePasswordRegenerated = (userId: string, newPassword: string) => {
     // In a real app, you might want to show a success message
     setRegeneratePasswordDialog({ open: false, user: null })
+    navigator.clipboard.writeText(newPassword)
+
+    // Show toast notification
+    toast({
+      title: "Password reset",
+      description: `Reset password as "${newPassword}"`,
+    })
   }
 
   const handleUserDeleted = (userId: string) => {

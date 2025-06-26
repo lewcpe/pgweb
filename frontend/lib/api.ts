@@ -63,7 +63,7 @@ export const createPgUser = (
   return api.post<PgUserWithPassword>(`/databases/${databaseId}/pgusers`, { username, permission_level: permission })
 }
 
-export const regeneratePgUserPassword = (databaseId: string, pgUserId: string): Promise<{ newPassword: string }> => {
+export const regeneratePgUserPassword = (databaseId: string, pgUserId: string): Promise<{ new_password: string }> => {
   return api.post(`/databases/${databaseId}/pgusers/${pgUserId}/regenerate-password`, {});
 };
 
