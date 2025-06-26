@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PostgreSQL Self-Service</title>
+    <!-- <link rel="stylesheet" href="style.css"> -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@latest/css/pico.min.css">
+</head>
+<body>
+    <header>
+        <h1>PostgreSQL Self-Service</h1>
+        <nav>
+            <a data-path="/">My Databases</a> |
+            <a data-path="/databases/new">Create Database</a>
+            <!-- User info and logout will be implicitly handled by oauth2-proxy behavior,
+                 or we might add a link to the oauth2-proxy sign_out endpoint later -->
+            <span id="user-email-display" style="margin-left: auto;"></span>
+        </nav>
+    </header>
+
+    <main class="container">
+        <!-- Content Sections -->
+        <!-- This section is now the main front page, showing list of databases -->
+        <section id="dashboard-section" class="content-section active">
+            <h2>My Databases</h2>
+            <button id="show-create-db-modal-dashboard" style="display:none;">Create New Database</button>
+            <div id="dashboard-db-list">
+                <!-- Database list will be rendered here by Dashboard.js -->
+            </div>
+            <p id="dashboard-loading" style="display:none;">Loading databases...</p>
+            <p id="dashboard-error" class="error" style="display:none;"></p>
+        </section>
+
+        <!-- This section will be for managing a single database (details & users) -->
+        <!-- It will be activated by router.js when path is /databases/:id/manage -->
+        <section style="display: none;" id="databasemanage-section" class="content-section">
+            <h2 id="db-manage-name">Database Management</h2>
+            <button id="back-to-main-db-list">Back to My Databases</button>
+            <div id="db-detail-content">
+                <!-- DB details will be rendered here -->
+            </div>
+            <p id="db-detail-loading" style="display:none;">Loading details...</p>
+            <p id="db-detail-error" class="error" style="display:none;"></p>
+
+            <h3>PostgreSQL Users</h3>
+            <button id="show-create-pg-user-modal-manage">Create New PG User</button>
+            <p id="pg-user-error-manage" class="error" style="display:none;"></p>
+            <p id="pg-user-success-manage" class="success" style="display:none;"></p>
+            <div id="pg-users-table-container-manage">
+                <!-- PG Users table will be rendered here -->
+            </div>
+        </section>
+
+        <!-- This section is for the standalone database creation form -->
+        <section id="databasecreateform-section" class="content-section" style="display:none;">
+            <h2>Create New Database</h2>
+            <form id="create-db-form">
+                <label for="dbNameInput">
+                    Database Name:
+                    <input type="text" id="dbNameInput" name="dbName" required>
+                </label>
+                <p id="db-name-error" class="error" style="display:none;"></p>
+                <button type="submit" id="create-db-submit">Create Database</button>
+                <button type="button" id="cancel-create-db" class="secondary">Cancel</button>
+                <p id="create-db-form-error" class="error" style="display:none;"></p>
+                <p id="create-db-form-success" class="success" style="display:none;"></p>
+            </form>
+        </section>
+    </main>
+
+    <!-- Modals refactored to <dialog> -->
+    <dialog id="create-db-dialog-dashboard">
+        <article>
+            <header>
+                <a href="#close-db-dialog-dashboard" aria-label="Close" class="close"></a>
+                <h3>Create New Database (Dashboard)</h3>
+            </header>
+            <form id="create-db-form-modal-dashboard">
+                <label for="newDbNameDashboard">
+                    Database Name:
+                    <input type="text" id="newDbNameDashboard" name="newDbNameDashboard" placeholder="Enter database name" required>
+                </label>
+                <p id="create-db-modal-dashboard-error" class="error" style="display:none;"></p>
+                <footer>
+                    <button type="button" class="secondary cancel-dialog" data-dialogid="create-db-dialog-dashboard">Cancel</button>
+                    <button type="submit">Create</button>
+                </footer>
+            </form>
+        </article>
+    </dialog>
+
+    <dialog id="create-pg-user-dialog">
+        <article>
+            <header>
+                <a href="#close-pg-user-dialog" aria-label="Close" class="close"></a>
+                <h3>Create New PostgreSQL User</h3>
+            </header>
+            <form id="create-pg-user-form">
+                <input type="hidden" id="pgUserDbId"> <!-- To store current DB ID -->
+                <label for="pgUsernameInput">
+                    Username:
+                    <input type="text" id="pgUsernameInput" name="pgUsername" required>
+                </label>
+                <label for="pgUserPermissionInput">
+                    Permission Level:
+                    <select id="pgUserPermissionInput" name="pgUserPermission">
+                        <option value="read">Read-only</option>
+                        <option value="write">Read/Write</option>
+                    </select>
+                </label>
+                <p id="create-pg-user-modal-error" class="error" style="display:none;"></p>
+                <footer>
+                    <button type="button" class="secondary cancel-dialog" data-dialogid="create-pg-user-dialog">Cancel</button>
+                    <button type="submit">Create User</button>
+                </footer>
+            </form>
+        </article>
+    </dialog>
+
+    <script src="api.js"></script>
+    <script src="router.js"></script>
+    <script src="app.js"></script>
+    <!-- Individual page/component scripts can be added here or loaded by app.js -->
+    <script src="components/Dashboard.js"></script>
+    <!-- DatabaseList.js is now removed -->
+    <!-- DatabaseDetail.js has been renamed to DatabaseManagePage.js -->
+    <script src="components/DatabaseManagePage.js"></script>
+    <script src="components/DatabaseCreateForm.js"></script>
+
+</body>
+</html>

@@ -55,9 +55,9 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
-    container_name: pgweb_dev_frontend
+      context: ./frontend # Assuming frontend code is in a 'frontend' subdirectory
+      dockerfile: Dockerfile # Dockerfile for Vite/Svelte app
+    container_name: pgweb_frontend
     ports:
       - "3000:3000"
     volumes:

@@ -311,14 +311,61 @@ func RegeneratePostgresUserPassword(pgAdminDSN, targetDbName, pgUserName string)
 	}
 	defer db.Close()
 
-	alterUserSQL := fmt.Sprintf("ALTER USER %s WITH PASSWORD $1", safePgUserName)
-	_, err = db.Exec(alterUserSQL, newGeneratedPassword)
+	// The password must be properly quoted to be included in the DDL statement.
+	// Using a parameterized query for the password in an ALTER USER is not standard.
+	// QuoteLiteral handles escaping correctly.
+	quotedPassword := pq.QuoteLiteral(newGeneratedPassword)
+	alterUserSQL := fmt.Sprintf("ALTER USER %s WITH PASSWORD %s", safePgUserName, quotedPassword)
+
+	_, err = db.Exec(alterUserSQL)
 	if err != nil {
 		return "", fmt.Errorf("failed to alter user %s password: %w", safePgUserName, err)
 	}
 
 	log.Printf("Password regenerated successfully for user %s on database %s.", safePgUserName, targetDbName)
 	return newGeneratedPassword, nil
+}
+
+// DeletePostgresUser drops a PostgreSQL user and revokes their privileges.
+func DeletePostgresUser(pgAdminDSN, targetDbName, pgUserName string) error {
+	log.Printf("Attempting to delete user %s from database %s", pgUserName, targetDbName)
+
+	safePgUserName, err := sanitizeIdentifier(pgUserName)
+	if err != nil {
+		return fmt.Errorf("invalid PostgreSQL username '%s' for deletion: %w", pgUserName, err)
+	}
+
+	targetDbDSN := getSpecificDatabaseDSN(pgAdminDSN, targetDbName)
+	db, err := connectToDB(targetDbDSN)
+	if err != nil {
+		return fmt.Errorf("failed to connect to target database %s for user deletion: %w", targetDbName, err)
+	}
+	defer db.Close()
+
+	// Reassign and drop ownership before revoking other privileges.
+	reassignSQL := fmt.Sprintf("REASSIGN OWNED BY %s TO postgres", safePgUserName) // Reassign to a default superuser
+	if _, err := db.Exec(reassignSQL); err != nil {
+		log.Printf("Warning: could not reassign ownership from %s: %v", safePgUserName, err)
+	}
+	dropOwnedSQL := fmt.Sprintf("DROP OWNED BY %s", safePgUserName)
+	if _, err := db.Exec(dropOwnedSQL); err != nil {
+		log.Printf("Warning: could not drop objects owned by %s: %v", safePgUserName, err)
+	}
+
+	// Revoke all privileges from the user on the database.
+	revokeSQL := fmt.Sprintf("REVOKE ALL PRIVILEGES ON DATABASE %s FROM %s", targetDbName, safePgUserName)
+	if _, err := db.Exec(revokeSQL); err != nil {
+		log.Printf("Warning: failed to revoke all privileges for user %s: %v", safePgUserName, err)
+	}
+
+	// Finally, drop the user.
+	dropUserSQL := fmt.Sprintf("DROP USER IF EXISTS %s", safePgUserName)
+	if _, err := db.Exec(dropUserSQL); err != nil {
+		return fmt.Errorf("failed to drop user %s: %w", safePgUserName, err)
+	}
+
+	log.Printf("User %s deleted successfully from database %s.", safePgUserName, targetDbName)
+	return nil
 }
 
 // SoftDeletePostgresDatabase revokes user privileges on a database.
@@ -369,47 +416,5 @@ func SoftDeletePostgresDatabase(pgAdminDSN, dbName string, pgUsers []models.Mana
 	}
 
 	log.Printf("Soft delete process completed for database %s (privileges revoked).", safeDBName)
-	return nil
-}
-
-// DeletePostgresUser drops a PostgreSQL user and revokes their privileges.
-func DeletePostgresUser(pgAdminDSN, targetDbName, pgUserName string) error {
-	log.Printf("Attempting to delete user %s from database %s", pgUserName, targetDbName)
-
-	safePgUserName, err := sanitizeIdentifier(pgUserName)
-	if err != nil {
-		return fmt.Errorf("invalid PostgreSQL username '%s' for deletion: %w", pgUserName, err)
-	}
-
-	targetDbDSN := getSpecificDatabaseDSN(pgAdminDSN, targetDbName)
-	db, err := connectToDB(targetDbDSN)
-	if err != nil {
-		return fmt.Errorf("failed to connect to target database %s for user deletion: %w", targetDbName, err)
-	}
-	defer db.Close()
-
-	// Reassign and drop ownership before revoking other privileges.
-	reassignSQL := fmt.Sprintf("REASSIGN OWNED BY %s TO postgres", safePgUserName) // Reassign to a default superuser
-	if _, err := db.Exec(reassignSQL); err != nil {
-		log.Printf("Warning: could not reassign ownership from %s: %v", safePgUserName, err)
-	}
-	dropOwnedSQL := fmt.Sprintf("DROP OWNED BY %s", safePgUserName)
-	if _, err := db.Exec(dropOwnedSQL); err != nil {
-		log.Printf("Warning: could not drop objects owned by %s: %v", safePgUserName, err)
-	}
-
-	// Revoke all privileges from the user on the database.
-	revokeSQL := fmt.Sprintf("REVOKE ALL PRIVILEGES ON DATABASE %s FROM %s", targetDbName, safePgUserName)
-	if _, err := db.Exec(revokeSQL); err != nil {
-		log.Printf("Warning: failed to revoke all privileges for user %s: %v", safePgUserName, err)
-	}
-
-	// Finally, drop the user.
-	dropUserSQL := fmt.Sprintf("DROP USER IF EXISTS %s", safePgUserName)
-	if _, err := db.Exec(dropUserSQL); err != nil {
-		return fmt.Errorf("failed to drop user %s: %w", safePgUserName, err)
-	}
-
-	log.Printf("User %s deleted successfully from database %s.", safePgUserName, targetDbName)
 	return nil
 }

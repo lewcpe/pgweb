@@ -37,7 +37,7 @@ Cypress.Commands.add('apiRequest', (method, endpoint, body = null, token = null)
 });
 
 // Login and get session token
-Cypress.Commands.add('login', (method = 'oidc') => {
+Cypress.Commands.add('login', (method = 'oidc', email = 'test@example.com') => {
   if (method === 'oidc') {
     // OIDC Login Flow (existing)
     // Step 1: Initiate OIDC login from backend
@@ -119,15 +119,15 @@ Cypress.Commands.add('login', (method = 'oidc') => {
       method: 'GET',
       url: `${Cypress.config().baseUrl}/api/me`, // Any protected endpoint will trigger auth
       headers: {
-        'X-Forwarded-Email': 'test@example.com', // Simulate oauth2-proxy header
+        'X-Forwarded-Email': email, // Simulate oauth2-proxy header
       },
       failOnStatusCode: false,
     }).then((response) => {
       if (response.status !== 200) {
         throw new Error(`Trusted header login failed with status: ${response.status}`);
       }
-      Cypress.env('X-Forwarded-Email', 'test@example.com'); // Store email for subsequent requests
-      cy.log('Trusted header login successful.');
+      Cypress.env('X-Forwarded-Email', email); // Store email for subsequent requests
+      cy.log(`Trusted header login successful for ${email}.`);
       return cy.wrap(response);
     });
   } else {
