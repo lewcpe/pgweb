@@ -59,12 +59,25 @@ services:
       dockerfile: Dockerfile # Dockerfile for Vite/Svelte app
     container_name: pgweb_frontend
     ports:
-      - "80:80"   # Host 5173 maps to Nginx container port 80
-                 # The frontend Dockerfile currently uses Nginx on port 80.
-                 # So this should map host 5173 to container 80 if using Nginx.
+      - "3000:3000"
     volumes:
-      - ./nginx.dev.conf:/etc/nginx/nginx.conf
-      - ./frontend/public:/etc/nginx/html
+      - ./frontend:/app
+      - /app/node_modules
     depends_on:
-      - backend
-    restart: unless-stopped
+      backend:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: "http://localhost/api"
+
+  nginx:
+    image: nginx:latest
+    container_name: pgweb_dev_nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.dev.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_healthy

@@ -307,16 +307,16 @@ func CheckIfPGDatabaseNameExists(name string) (bool, error) {
 
 // CheckIfManagedDatabaseExists checks if a managed database record exists by its UUID.
 func CheckIfManagedDatabaseExists(databaseID uuid.UUID) (bool, error) {
-    if AppDB == nil {
-        return false, errors.New("database not initialized")
-    }
-    query := `SELECT EXISTS(SELECT 1 FROM managed_databases WHERE database_id = $1)`
-    var exists bool
-    err := AppDB.QueryRow(query, databaseID).Scan(&exists)
-    if err != nil {
-        return false, fmt.Errorf("error checking existence of database_id %s: %w", databaseID, err)
-    }
-    return exists, nil
+	if AppDB == nil {
+		return false, errors.New("database not initialized")
+	}
+	query := `SELECT EXISTS(SELECT 1 FROM managed_databases WHERE database_id = $1)`
+	var exists bool
+	err := AppDB.QueryRow(query, databaseID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("error checking existence of database_id %s: %w", databaseID, err)
+	}
+	return exists, nil
 }
 
 // --- ManagedPGUser CRUD & related functions ---
