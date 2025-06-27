@@ -1,13 +1,29 @@
 "use client"
 
 import Link from "next/link"
+import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
 import { Database, User } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { getUserEmail } from "@/lib/api"
 
 export function Navigation() {
   const pathname = usePathname()
+  const [userEmail, setUserEmail] = useState("Loading...")
+
+  useEffect(() => {
+    const fetchEmail = async () => {
+      try {
+        const email = await getUserEmail()
+        setUserEmail(email)
+      } catch (error) {
+        console.error("Failed to fetch user email:", error)
+        setUserEmail("Error fetching email")
+      }
+    }
+    fetchEmail()
+  }, [])
 
   const navigation = [
     {
@@ -51,7 +67,7 @@ export function Navigation() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <User className="h-4 w-4" />
-              john.doe@example.com
+              {userEmail}
             </div>
             <ThemeToggle />
           </div>

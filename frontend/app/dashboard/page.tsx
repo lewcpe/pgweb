@@ -75,7 +75,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="container mx-auto py-8 px-4">
+    <div id="dashboard-section" className="container mx-auto py-8 px-4">
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold">Databases</h1>
@@ -119,7 +119,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card className="border-0">
+        <Card id="dashboard-db-list" className="border-0">
           <CardContent>
             <Table>
               <TableHeader>

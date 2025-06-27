@@ -5,6 +5,7 @@ describe('Database Management API', () => {
 
   before(() => {
     // Login and get token using trustedHeader method
+    
     cy.login('trustedHeader').then(() => {
       // For trustedHeader auth, the session cookie is set directly by the backend
       // No need to explicitly get it from Dex or pass authToken

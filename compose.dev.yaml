@@ -16,17 +16,6 @@ services:
       timeout: 5s
       retries: 10
 
-  dex:
-    image: ghcr.io/dexidp/dex:latest-distroless
-    container_name: pgweb_dev_dex
-    volumes:
-      - ./dex_config.yml:/etc/dex/config.docker.yaml:ro
-    ports:
-      - "5556:5556"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   backend:
     build:
       context: ./backend
@@ -45,8 +34,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      dex:
-        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
       interval: 15s
@@ -56,7 +43,7 @@ services:
   frontend:
     build:
       context: ./frontend # Assuming frontend code is in a 'frontend' subdirectory
-      dockerfile: Dockerfile # Dockerfile for Vite/Svelte app
+      dockerfile: Dockerfile.dev # Dockerfile for Vite/Svelte app
     container_name: pgweb_frontend
     ports:
       - "3000:3000"

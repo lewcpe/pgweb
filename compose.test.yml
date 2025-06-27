@@ -14,17 +14,6 @@ services:
       timeout: 5s
       retries: 10
 
-  dex:
-    image: ghcr.io/dexidp/dex:latest-distroless
-    container_name: pgweb_test_dex
-    volumes:
-      - ./dex_config.test.yml:/etc/dex/config.docker.yaml:ro
-    ports:
-      - "5556:5556"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   backend:
     image: ${BACKEND_IMAGE:-pgweb/pgweb-backend-test}
     build:
@@ -33,10 +22,6 @@ services:
     container_name: pgweb_test_backend
     environment:
       PG_ADMIN_DSN: "postgres://test_admin:test_password@postgres:5432/test_admin_db?sslmode=disable"
-      OIDC_ISSUER_URL: "http://dex:5556/dex"
-      OIDC_CLIENT_ID: "test-client"
-      OIDC_CLIENT_SECRET: "test-secret"
-      OIDC_REDIRECT_URL: "http://backend:8080/auth/oidc/callback"
       APP_DB_DSN: "postgres://test_admin:test_password@postgres:5432/test_admin_db?sslmode=disable"
       GIN_MODE: "release"
       SESSION_SECRET_KEY: "test-session-secret"
@@ -46,8 +31,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      dex:
-        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
       interval: 5s
@@ -61,19 +44,28 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: pgweb_frontend
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost/api
     depends_on:
       - backend
     restart: unless-stopped
+
+  nginx:
+    image: nginx:latest
+    container_name: pgweb_dev_nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.dev.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - frontend
 
   cypress:
     image: cypress/included:12.17.0
     container_name: pgweb_test_cypress
     environment:
-      CYPRESS_BASE_URL: "http://frontend:80"
+      CYPRESS_BASE_URL: "http://nginx"
     working_dir: /e2e
     volumes:
       - ./tests/:/e2e

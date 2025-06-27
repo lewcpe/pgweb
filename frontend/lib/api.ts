@@ -74,3 +74,8 @@ export const deletePgUser = (databaseId: string, pgUserId: string): Promise<void
 export const deleteDatabase = (databaseId: string): Promise<void> => {
   return api.delete(`/databases/${databaseId}`);
 };
+
+export const getUserEmail = async (): Promise<string> => {
+  const userData = await api.get<{ email: string }>("/me");
+  return userData.email;
+};
