@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	safeIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	safeIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*`)
 	// Character set for password generation
 	passwordChars  = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
 	passwordLength = 16
@@ -183,6 +183,23 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 		return fmt.Errorf("failed to create vector extension in database '%s': %w", safeDBName, err)
 	}
 	log.Printf("vector extension created successfully in %s.", safeDBName)
+
+	// New: Create a schema named after the database
+	log.Printf("Creating schema %s in database %s", safeDBName, safeDBName)
+	createSchemaSQL := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", safeDBName)
+	_, err = newDB.Exec(createSchemaSQL)
+	if err != nil {
+		log.Printf("Failed to create schema %s in %s. Attempting to drop it. Error: %v", safeDBName, safeDBName, err)
+		_, dropErr := adminDB.Exec(fmt.Sprintf("DROP DATABASE %s", safeDBName))
+		if dropErr != nil {
+			log.Printf("CRITICAL: Failed to create schema AND failed to drop DB: %v. Manual cleanup for %s.", dropErr, safeDBName)
+		} else {
+			log.Printf("Successfully dropped database %s after failing to create schema.", safeDBName)
+		}
+		return fmt.Errorf("failed to create schema '%s' in database '%s': %w", safeDBName, safeDBName, err)
+	}
+	log.Printf("Schema %s created successfully in %s.", safeDBName, safeDBName)
+
 	return nil
 }
 
@@ -259,6 +276,13 @@ func CreatePostgresUser(pgAdminDSN, targetDbName, pgUserName, permissionLevel st
 		log.Printf("Warning: failed to grant USAGE on schema public to user %s: %v", safePgUserName, err)
 	}
 
+	// Grant USAGE on the database-specific schema
+	grantDbSchemaUsageSQL := fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s", targetDbName, safePgUserName)
+	_, err = db.Exec(grantDbSchemaUsageSQL)
+	if err != nil {
+		log.Printf("Warning: failed to grant USAGE on schema %s to user %s: %v", targetDbName, safePgUserName, err)
+	}
+
 	switch permissionLevel {
 	case "read":
 		// For read users, only grant USAGE on schema and SELECT on tables
@@ -268,10 +292,24 @@ func CreatePostgresUser(pgAdminDSN, targetDbName, pgUserName, permissionLevel st
 			log.Printf("Warning: failed to grant SELECT for user %s: %v", safePgUserName, err)
 		}
 
+		// Grant SELECT on the database-specific schema
+		grantDbSchemaSelectSQL := fmt.Sprintf("GRANT SELECT ON ALL TABLES IN SCHEMA %s TO %s", targetDbName, safePgUserName)
+		_, err = db.Exec(grantDbSchemaSelectSQL)
+		if err != nil {
+			log.Printf("Warning: failed to grant SELECT for user %s on schema %s: %v", safePgUserName, targetDbName, err)
+		}
+
 		alterDefaultSelectSQL := fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO %s", safePgUserName)
 		_, err = db.Exec(alterDefaultSelectSQL)
 		if err != nil {
 			log.Printf("Warning: failed to alter default SELECT privileges for user %s: %v", safePgUserName, err)
+		}
+
+		// Alter default privileges for the database-specific schema
+		alterDefaultDbSchemaSelectSQL := fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA %s GRANT SELECT ON TABLES TO %s", targetDbName, safePgUserName)
+		_, err = db.Exec(alterDefaultDbSchemaSelectSQL)
+		if err != nil {
+			log.Printf("Warning: failed to alter default SELECT privileges for user %s on schema %s: %v", safePgUserName, targetDbName, err)
 		}
 	case "write":
 		// Create a schema for the user
@@ -289,8 +327,8 @@ func CreatePostgresUser(pgAdminDSN, targetDbName, pgUserName, permissionLevel st
 			log.Printf("Warning: failed to grant ALL PRIVILEGES on schema %s to user %s: %v", safePgUserName, safePgUserName, err)
 		}
 
-		// Set the search path for the user to prioritize their own schema
-		setSearchPathSQL := fmt.Sprintf("ALTER ROLE %s SET search_path TO %s, public", safePgUserName, safePgUserName)
+		// Set the search path for the user to prioritize their own schema, then the database schema
+		setSearchPathSQL := fmt.Sprintf("ALTER ROLE %s SET search_path TO %s, %s, public", safePgUserName, safePgUserName, targetDbName)
 		_, err = db.Exec(setSearchPathSQL)
 		if err != nil {
 			log.Printf("Warning: failed to set search_path for user %s: %v", safePgUserName, err)
@@ -301,6 +339,13 @@ func CreatePostgresUser(pgAdminDSN, targetDbName, pgUserName, permissionLevel st
 		_, err = db.Exec(alterDefaultAllSQL)
 		if err != nil {
 			log.Printf("Warning: failed to alter default ALL privileges for user %s in schema %s: %v", safePgUserName, safePgUserName, err)
+		}
+
+		// For future tables created by this user in the database-specific schema, grant all privileges to themselves
+		alterDefaultDbSchemaAllSQL := fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA %s GRANT ALL ON TABLES TO %s", safePgUserName, targetDbName, safePgUserName)
+		_, err = db.Exec(alterDefaultDbSchemaAllSQL)
+		if err != nil {
+			log.Printf("Warning: failed to alter default ALL privileges for user %s in schema %s: %v", safePgUserName, targetDbName, err)
 		}
 	default:
 		return "", fmt.Errorf("invalid permission level: %s. Must be 'read' or 'write'", permissionLevel)
