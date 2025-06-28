@@ -261,6 +261,7 @@ func CreatePostgresUser(pgAdminDSN, targetDbName, pgUserName, permissionLevel st
 
 	switch permissionLevel {
 	case "read":
+		// For read users, only grant USAGE on schema and SELECT on tables
 		grantSelectSQL := fmt.Sprintf("GRANT SELECT ON ALL TABLES IN SCHEMA public TO %s", safePgUserName)
 		_, err = db.Exec(grantSelectSQL)
 		if err != nil {
@@ -273,16 +274,33 @@ func CreatePostgresUser(pgAdminDSN, targetDbName, pgUserName, permissionLevel st
 			log.Printf("Warning: failed to alter default SELECT privileges for user %s: %v", safePgUserName, err)
 		}
 	case "write":
-		grantDMLSQL := fmt.Sprintf("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %s", safePgUserName)
-		_, err = db.Exec(grantDMLSQL)
+		// Create a schema for the user
+		createSchemaSQL := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s AUTHORIZATION %s", safePgUserName, safePgUserName)
+		_, err = db.Exec(createSchemaSQL)
 		if err != nil {
-			log.Printf("Warning: failed to grant DML for user %s: %v", safePgUserName, err)
+			return "", fmt.Errorf("failed to create schema %s for user %s: %w", safePgUserName, safePgUserName, err)
+		}
+		log.Printf("Schema %s created for user %s.", safePgUserName, safePgUserName)
+
+		// Grant all privileges on the new schema to the user
+		grantAllOnSchemaSQL := fmt.Sprintf("GRANT ALL PRIVILEGES ON SCHEMA %s TO %s", safePgUserName, safePgUserName)
+		_, err = db.Exec(grantAllOnSchemaSQL)
+		if err != nil {
+			log.Printf("Warning: failed to grant ALL PRIVILEGES on schema %s to user %s: %v", safePgUserName, safePgUserName, err)
 		}
 
-		alterDefaultDMLSQL := fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %s", safePgUserName)
-		_, err = db.Exec(alterDefaultDMLSQL)
+		// Set the search path for the user to prioritize their own schema
+		setSearchPathSQL := fmt.Sprintf("ALTER ROLE %s SET search_path TO %s, public", safePgUserName, safePgUserName)
+		_, err = db.Exec(setSearchPathSQL)
 		if err != nil {
-			log.Printf("Warning: failed to alter default DML privileges for user %s: %v", safePgUserName, err)
+			log.Printf("Warning: failed to set search_path for user %s: %v", safePgUserName, err)
+		}
+
+		// For future tables created by this user in their schema, grant all privileges to themselves
+		alterDefaultAllSQL := fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA %s GRANT ALL ON TABLES TO %s", safePgUserName, safePgUserName, safePgUserName)
+		_, err = db.Exec(alterDefaultAllSQL)
+		if err != nil {
+			log.Printf("Warning: failed to alter default ALL privileges for user %s in schema %s: %v", safePgUserName, safePgUserName, err)
 		}
 	default:
 		return "", fmt.Errorf("invalid permission level: %s. Must be 'read' or 'write'", permissionLevel)
@@ -342,11 +360,6 @@ func DeletePostgresUser(pgAdminDSN, targetDbName, pgUserName string) error {
 	}
 	defer db.Close()
 
-	// Reassign and drop ownership before revoking other privileges.
-	reassignSQL := fmt.Sprintf("REASSIGN OWNED BY %s TO postgres", safePgUserName) // Reassign to a default superuser
-	if _, err := db.Exec(reassignSQL); err != nil {
-		log.Printf("Warning: could not reassign ownership from %s: %v", safePgUserName, err)
-	}
 	dropOwnedSQL := fmt.Sprintf("DROP OWNED BY %s", safePgUserName)
 	if _, err := db.Exec(dropOwnedSQL); err != nil {
 		log.Printf("Warning: could not drop objects owned by %s: %v", safePgUserName, err)
