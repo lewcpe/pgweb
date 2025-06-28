@@ -200,6 +200,111 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 	}
 	log.Printf("Schema %s created successfully in %s.", safeDBName, safeDBName)
 
+	// New: Create read and write roles for the database
+	readRole := fmt.Sprintf("%s_read", safeDBName)
+	writeRole := fmt.Sprintf("%s_write", safeDBName)
+
+	log.Printf("Creating role %s for database %s", readRole, safeDBName)
+	_, err = newDB.Exec(fmt.Sprintf("CREATE ROLE %s", readRole))
+	if err != nil {
+		return fmt.Errorf("failed to create read role %s: %w", readRole, err)
+	}
+
+	log.Printf("Creating role %s for database %s", writeRole, safeDBName)
+	_, err = newDB.Exec(fmt.Sprintf("CREATE ROLE %s", writeRole))
+	if err != nil {
+		return fmt.Errorf("failed to create write role %s: %w", writeRole, err)
+	}
+
+	// Grant CONNECT on the database to both roles
+	_, err = newDB.Exec(fmt.Sprintf("GRANT CONNECT ON DATABASE %s TO %s", safeDBName, readRole))
+	if err != nil {
+		return fmt.Errorf("failed to grant CONNECT to read role %s: %w", readRole, err)
+	}
+	_, err = newDB.Exec(fmt.Sprintf("GRANT CONNECT ON DATABASE %s TO %s", safeDBName, writeRole))
+	if err != nil {
+		return fmt.Errorf("failed to grant CONNECT to write role %s: %w", writeRole, err)
+	}
+
+	// Grant USAGE on public and database-specific schemas to both roles
+	_, err = newDB.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA public TO %s", readRole))
+	if err != nil {
+		return fmt.Errorf("failed to grant USAGE on public schema to read role %s: %w", readRole, err)
+	}
+	_, err = newDB.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s", safeDBName, readRole))
+	if err != nil {
+		return fmt.Errorf("failed to grant USAGE on database schema to read role %s: %w", readRole, err)
+	}
+
+	_, err = newDB.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA public TO %s", writeRole))
+	if err != nil {
+		return fmt.Errorf("failed to grant USAGE on public schema to write role %s: %w", writeRole, err)
+	}
+	_, err = newDB.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s", safeDBName, writeRole))
+	if err != nil {
+		return fmt.Errorf("failed to grant USAGE on database schema to write role %s: %w", writeRole, err)
+	}
+
+	// Grant SELECT on all tables in public and database-specific schemas to read role
+	_, err = newDB.Exec(fmt.Sprintf("GRANT SELECT ON ALL TABLES IN SCHEMA public TO %s", readRole))
+	if err != nil {
+		return fmt.Errorf("failed to grant SELECT on public tables to read role %s: %w", readRole, err)
+	}
+	_, err = newDB.Exec(fmt.Sprintf("GRANT SELECT ON ALL TABLES IN SCHEMA %s TO %s", safeDBName, readRole))
+	if err != nil {
+		return fmt.Errorf("failed to grant SELECT on database schema tables to read role %s: %w", readRole, err)
+	}
+
+	// Set default SELECT privileges for future tables in public and database-specific schemas for read role
+	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO %s", readRole))
+	if err != nil {
+		return fmt.Errorf("failed to alter default SELECT privileges for public schema to read role %s: %w", readRole, err)
+	}
+	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA %s GRANT SELECT ON TABLES TO %s", safeDBName, readRole))
+	if err != nil {
+		return fmt.Errorf("failed to alter default SELECT privileges for database schema to read role %s: %w", readRole, err)
+	}
+
+	// Grant ALL PRIVILEGES on all tables in public and database-specific schemas to write role
+	_, err = newDB.Exec(fmt.Sprintf("GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO %s", writeRole))
+	if err != nil {
+		return fmt.Errorf("failed to grant ALL on public tables to write role %s: %w", writeRole, err)
+	}
+	_, err = newDB.Exec(fmt.Sprintf("GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA %s TO %s", safeDBName, writeRole))
+	if err != nil {
+		return fmt.Errorf("failed to grant ALL on database schema tables to write role %s: %w", writeRole, err)
+	}
+
+	// Grant CREATE and USAGE on schemas to write role for index creation
+	_, err = newDB.Exec(fmt.Sprintf("GRANT CREATE ON SCHEMA public TO %s", writeRole))
+	if err != nil {
+		return fmt.Errorf("failed to grant CREATE on public schema to write role %s: %w", writeRole, err)
+	}
+	_, err = newDB.Exec(fmt.Sprintf("GRANT CREATE ON SCHEMA %s TO %s", safeDBName, writeRole))
+	if err != nil {
+		return fmt.Errorf("failed to grant CREATE on database schema to write role %s: %w", writeRole, err)
+	}
+
+	// Set default ALL PRIVILEGES for future tables in public and database-specific schemas for write role
+	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO %s", writeRole))
+	if err != nil {
+		return fmt.Errorf("failed to alter default ALL privileges for public schema to write role %s: %w", writeRole, err)
+	}
+	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA %s GRANT ALL ON TABLES TO %s", safeDBName, writeRole))
+	if err != nil {
+		return fmt.Errorf("failed to alter default ALL privileges for database schema to write role %s: %w", writeRole, err)
+	}
+
+	// Set default CREATE and USAGE privileges for future schemas for write role
+	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT CREATE ON TABLES TO %s", writeRole))
+	if err != nil {
+		return fmt.Errorf("failed to alter default CREATE privileges for public schema to write role %s: %w", writeRole, err)
+	}
+	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA %s GRANT CREATE ON TABLES TO %s", safeDBName, writeRole))
+	if err != nil {
+		return fmt.Errorf("failed to alter default CREATE privileges for database schema to write role %s: %w", writeRole, err)
+	}
+
 	return nil
 }
 
@@ -263,55 +368,29 @@ func CreatePostgresUser(pgAdminDSN, targetDbName, pgUserName, permissionLevel st
 	}
 	log.Printf("User %s created.", safePgUserName)
 
-	grantConnectSQL := fmt.Sprintf("GRANT CONNECT ON DATABASE %s TO %s", targetDbName, safePgUserName) // targetDbName here is safe as it's from our system.
-	_, err = db.Exec(grantConnectSQL)
-	if err != nil {
-		log.Printf("Warning: failed to grant CONNECT on database %s to user %s: %v", targetDbName, safePgUserName, err)
-		// Proceed, as user is created. More robust error handling might be needed.
-	}
-
-	grantUsageSQL := fmt.Sprintf("GRANT USAGE ON SCHEMA public TO %s", safePgUserName)
-	_, err = db.Exec(grantUsageSQL)
-	if err != nil {
-		log.Printf("Warning: failed to grant USAGE on schema public to user %s: %v", safePgUserName, err)
-	}
-
-	// Grant USAGE on the database-specific schema
-	grantDbSchemaUsageSQL := fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s", targetDbName, safePgUserName)
-	_, err = db.Exec(grantDbSchemaUsageSQL)
-	if err != nil {
-		log.Printf("Warning: failed to grant USAGE on schema %s to user %s: %v", targetDbName, safePgUserName, err)
-	}
-
+	// Grant the appropriate role to the user
+	var grantRoleSQL string
 	switch permissionLevel {
 	case "read":
-		// For read users, only grant USAGE on schema and SELECT on tables
-		grantSelectSQL := fmt.Sprintf("GRANT SELECT ON ALL TABLES IN SCHEMA public TO %s", safePgUserName)
-		_, err = db.Exec(grantSelectSQL)
-		if err != nil {
-			log.Printf("Warning: failed to grant SELECT for user %s: %v", safePgUserName, err)
-		}
-
-		// Grant SELECT on the database-specific schema
-		grantDbSchemaSelectSQL := fmt.Sprintf("GRANT SELECT ON ALL TABLES IN SCHEMA %s TO %s", targetDbName, safePgUserName)
-		_, err = db.Exec(grantDbSchemaSelectSQL)
-		if err != nil {
-			log.Printf("Warning: failed to grant SELECT for user %s on schema %s: %v", safePgUserName, targetDbName, err)
-		}
-
-		alterDefaultSelectSQL := fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO %s", safePgUserName)
-		_, err = db.Exec(alterDefaultSelectSQL)
-		if err != nil {
-			log.Printf("Warning: failed to alter default SELECT privileges for user %s: %v", safePgUserName, err)
-		}
-
-		// Alter default privileges for the database-specific schema
-		alterDefaultDbSchemaSelectSQL := fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA %s GRANT SELECT ON TABLES TO %s", targetDbName, safePgUserName)
-		_, err = db.Exec(alterDefaultDbSchemaSelectSQL)
-		if err != nil {
-			log.Printf("Warning: failed to alter default SELECT privileges for user %s on schema %s: %v", safePgUserName, targetDbName, err)
-		}
+		grantRoleSQL = fmt.Sprintf("GRANT %s_read TO %s", targetDbName, safePgUserName)
 	case "write":
+		grantRoleSQL = fmt.Sprintf("GRANT %s_write TO %s", targetDbName, safePgUserName)
+	}
+
+	_, err = db.Exec(grantRoleSQL)
+	if err != nil {
+		// Attempt to drop the user if role grant fails to avoid inconsistent state
+		log.Printf("Failed to grant role to user %s: %v. Attempting to drop user.", safePgUserName, err)
+		_, dropUserErr := db.Exec(fmt.Sprintf("DROP USER IF EXISTS %s", safePgUserName))
+		if dropUserErr != nil {
+			log.Printf("CRITICAL: Failed to grant role AND failed to drop user: %v. Manual cleanup for user %s.", dropUserErr, safePgUserName)
+		}
+		return "", fmt.Errorf("failed to grant role %s to user %s: %w", permissionLevel, safePgUserName, err)
+	}
+	log.Printf("Role %s granted to user %s.", permissionLevel, safePgUserName)
+
+	// Set search_path for write users
+	if permissionLevel == "write" {
 		// Create a schema for the user
 		createSchemaSQL := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s AUTHORIZATION %s", safePgUserName, safePgUserName)
 		_, err = db.Exec(createSchemaSQL)
@@ -340,15 +419,6 @@ func CreatePostgresUser(pgAdminDSN, targetDbName, pgUserName, permissionLevel st
 		if err != nil {
 			log.Printf("Warning: failed to alter default ALL privileges for user %s in schema %s: %v", safePgUserName, safePgUserName, err)
 		}
-
-		// For future tables created by this user in the database-specific schema, grant all privileges to themselves
-		alterDefaultDbSchemaAllSQL := fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA %s GRANT ALL ON TABLES TO %s", safePgUserName, targetDbName, safePgUserName)
-		_, err = db.Exec(alterDefaultDbSchemaAllSQL)
-		if err != nil {
-			log.Printf("Warning: failed to alter default ALL privileges for user %s in schema %s: %v", safePgUserName, targetDbName, err)
-		}
-	default:
-		return "", fmt.Errorf("invalid permission level: %s. Must be 'read' or 'write'", permissionLevel)
 	}
 	log.Printf("Permissions granted for user %s on database %s with level %s.", safePgUserName, targetDbName, permissionLevel)
 	return generatedPassword, nil
@@ -410,10 +480,14 @@ func DeletePostgresUser(pgAdminDSN, targetDbName, pgUserName string) error {
 		log.Printf("Warning: could not drop objects owned by %s: %v", safePgUserName, err)
 	}
 
-	// Revoke all privileges from the user on the database.
-	revokeSQL := fmt.Sprintf("REVOKE ALL PRIVILEGES ON DATABASE %s FROM %s", targetDbName, safePgUserName)
-	if _, err := db.Exec(revokeSQL); err != nil {
-		log.Printf("Warning: failed to revoke all privileges for user %s: %v", safePgUserName, err)
+	// Revoke roles from the user
+	revokeReadRoleSQL := fmt.Sprintf("REVOKE %s_read FROM %s", targetDbName, safePgUserName)
+	if _, err := db.Exec(revokeReadRoleSQL); err != nil {
+		log.Printf("Warning: failed to revoke read role from user %s: %v", safePgUserName, err)
+	}
+	revokeWriteRoleSQL := fmt.Sprintf("REVOKE %s_write FROM %s", targetDbName, safePgUserName)
+	if _, err := db.Exec(revokeWriteRoleSQL); err != nil {
+		log.Printf("Warning: failed to revoke write role from user %s: %v", safePgUserName, err)
 	}
 
 	// Finally, drop the user.
@@ -456,13 +530,16 @@ func SoftDeletePostgresDatabase(pgAdminDSN, dbName string, pgUsers []models.Mana
 		}
 
 		if targetDB != nil {
-			log.Printf("Revoking schema/table privileges for user %s on database %s", safeUsername, safeDBName)
-			// Must be connected to the specific database (targetDB)
-			if _, err := targetDB.Exec(fmt.Sprintf("REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM %s", safeUsername)); err != nil {
-				log.Printf("Warning: Failed to revoke table privileges for user %s on %s: %v", safeUsername, safeDBName, err)
+			log.Printf("Revoking roles for user %s on database %s", safeUsername, safeDBName)
+			// Revoke read role
+			revokeReadRoleSQL := fmt.Sprintf("REVOKE %s_read FROM %s", safeDBName, safeUsername)
+			if _, err := targetDB.Exec(revokeReadRoleSQL); err != nil {
+				log.Printf("Warning: Failed to revoke read role from user %s on %s: %v", safeUsername, safeDBName, err)
 			}
-			if _, err := targetDB.Exec(fmt.Sprintf("REVOKE ALL PRIVILEGES ON SCHEMA public FROM %s", safeUsername)); err != nil {
-				log.Printf("Warning: Failed to revoke schema privileges for user %s on %s: %v", safeUsername, safeDBName, err)
+			// Revoke write role
+			revokeWriteRoleSQL := fmt.Sprintf("REVOKE %s_write FROM %s", safeDBName, safeUsername)
+			if _, err := targetDB.Exec(revokeWriteRoleSQL); err != nil {
+				log.Printf("Warning: Failed to revoke write role from user %s on %s: %v", safeUsername, safeDBName, err)
 			}
 		}
 
