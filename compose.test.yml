@@ -70,7 +70,8 @@ services:
       PG_ADMIN_DSN: "postgres://test_admin:test_password@postgres:5432/test_admin_db?sslmode=disable"
       PG_HOST: "postgres"
     depends_on:
-      - cypress
+      cypress:
+        condition: service_completed_successfully
 
   cypress:
     image: cypress/included:12.17.0
