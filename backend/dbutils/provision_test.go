@@ -252,6 +252,18 @@ func TestUserPermissionsAndIsolation(t *testing.T) {
 			t.Fatalf("Write user failed to delete data: %v", err)
 		}
 
+		// Verify CREATE INDEX is allowed
+		_, err = writeDB.Exec("CREATE INDEX idx_write_test ON write_test_table(id)")
+		if err != nil {
+			t.Fatalf("Write user failed to create index: %v", err)
+		}
+
+		// Verify DROP INDEX is allowed
+		_, err = writeDB.Exec("DROP INDEX idx_write_test")
+		if err != nil {
+			t.Fatalf("Write user failed to drop index: %v", err)
+		}
+
 		// Clean up table
 		_, err = writeDB.Exec("DROP TABLE write_test_table")
 		if err != nil {
@@ -323,5 +335,95 @@ func TestUserPermissionsAndIsolation(t *testing.T) {
 	_, err = adminDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", testDBName2))
 	if err != nil {
 		t.Errorf("Failed to drop second test database %s: %v", testDBName2, err)
+	}
+}
+
+// TestUserCannotCreateOrDropDB verifies that a user with 'write' permissions cannot create or drop databases.
+func TestUserCannotCreateOrDropDB(t *testing.T) {
+	adminDSN := os.Getenv("PG_ADMIN_DSN")
+	if adminDSN == "" {
+		t.Skip("PG_ADMIN_DSN not set, skipping test")
+	}
+
+	// 1. Create a user with 'write' permissions
+	password, err := CreatePostgresUser(adminDSN, testDBName, testUser, "write")
+	if err != nil {
+		t.Fatalf("Failed to create postgres user: %v", err)
+	}
+
+	userDSN := getUserDSN(t, testUser, password, testDBName)
+
+	userDB, err := connectToDB(userDSN)
+	if err != nil {
+		t.Fatalf("Failed to connect to test DB as new user: %v", err)
+	}
+	defer userDB.Close()
+
+	// 2. Attempt to create a database (should fail)
+	_, err = userDB.Exec("CREATE DATABASE should_not_be_created_db")
+	if err == nil {
+		t.Fatal("User should not be able to create a database")
+	}
+	if !strings.Contains(err.Error(), "permission denied") {
+		t.Errorf("Expected 'permission denied' error, got: %v", err)
+	}
+
+	// 3. Attempt to drop a database (should fail)
+	_, err = userDB.Exec(fmt.Sprintf("DROP DATABASE %s", testDBName))
+	if err == nil {
+		t.Fatal("User should not be able to drop a database")
+	}
+	if !strings.Contains(err.Error(), "must be owner of database") {
+		t.Errorf("Expected 'must be owner of database' error, got: %v", err)
+	}
+
+	// 4. Cleanup the user
+	err = DeletePostgresUser(adminDSN, testDBName, testUser)
+	if err != nil {
+		t.Fatalf("Failed to delete postgres user: %v", err)
+	}
+}
+
+// TestUserCanCreateTable verifies a user with 'write' permissions can create and delete tables.
+func TestUserCanCreateTable(t *testing.T) {
+	adminDSN := os.Getenv("PG_ADMIN_DSN")
+	if adminDSN == "" {
+		t.Skip("PG_ADMIN_DSN not set, skipping test")
+	}
+
+	// 1. Create a user with 'write' permissions
+	testUser := "writeuser_createtable_" + uuid.New().String()[:8]
+	password, err := CreatePostgresUser(adminDSN, testDBName, testUser, "write")
+	if err != nil {
+		t.Fatalf("Failed to create postgres user: %v", err)
+	}
+
+	// Defer user deletion
+	defer func() {
+		err := DeletePostgresUser(adminDSN, testDBName, testUser)
+		if err != nil {
+			t.Errorf("Failed to delete postgres user %s: %v", testUser, err)
+		}
+	}()
+
+	userDSN := getUserDSN(t, testUser, password, testDBName)
+
+	userDB, err := connectToDB(userDSN)
+	if err != nil {
+		t.Fatalf("Failed to connect to test DB as new user: %v", err)
+	}
+	defer userDB.Close()
+
+	// 2. Create a table
+	tableName := "test_table_creation"
+	_, err = userDB.Exec(fmt.Sprintf("CREATE TABLE %s (id INT)", tableName))
+	if err != nil {
+		t.Fatalf("User failed to create table: %v", err)
+	}
+
+	// 3. Drop the table
+	_, err = userDB.Exec(fmt.Sprintf("DROP TABLE %s", tableName))
+	if err != nil {
+		t.Fatalf("User failed to drop table: %v", err)
 	}
 }

@@ -117,6 +117,21 @@ The project includes end-to-end tests for the backend API using Cypress. These t
     ```
     *(Note: Ensure the `CYPRESS_BASE_URL` in `compose.test.yml` or your local Cypress config points to the correct backend URL for testing, typically `http://backend:8080` when run via compose, or `http://localhost:8080` if backend is run directly on host for local Cypress development).*
 
+### Backend Go Tests
+
+To run the backend's Go tests, you can use the `backend-tests` profile in the `compose.test.yml` file. This will run the tests in a containerized environment.
+
+```bash
+docker compose -f compose.test.yml --profile backend-tests up --build
+```
+
+Alternatively, you can run the tests directly on your host machine if you have Go installed:
+
+```bash
+cd backend
+PG_ADMIN_DSN="postgres://test_admin:test_password@localhost:5432/test_admin_db?sslmode=disable" go test ./...
+```
+
 ## 7. Project Structure
 
 ```

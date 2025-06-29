@@ -296,11 +296,11 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 	}
 
 	// Set default CREATE and USAGE privileges for future schemas for write role
-	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT CREATE ON TABLES TO %s", writeRole))
+	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO %s", writeRole))
 	if err != nil {
 		return fmt.Errorf("failed to alter default CREATE privileges for public schema to write role %s: %w", writeRole, err)
 	}
-	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA %s GRANT CREATE ON TABLES TO %s", safeDBName, writeRole))
+	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA %s GRANT ALL ON TABLES TO %s", safeDBName, writeRole))
 	if err != nil {
 		return fmt.Errorf("failed to alter default CREATE privileges for database schema to write role %s: %w", writeRole, err)
 	}
