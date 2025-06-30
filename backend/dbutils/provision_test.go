@@ -314,7 +314,7 @@ func TestUserPermissionsAndIsolation(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to delete read user %s: %v", readUser, err)
 	}
-			err = DeletePostgresUser(adminDSN, testDBName, writeUser)
+	err = DeletePostgresUser(adminDSN, testDBName, writeUser)
 	if err != nil {
 		t.Errorf("Failed to delete write user %s: %v", writeUser, err)
 	}
@@ -426,4 +426,125 @@ func TestUserCanCreateTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("User failed to drop table: %v", err)
 	}
+}
+
+// TestReadUserCanReadWriteUserData verifies that a read user can select data created by a write user.
+func TestReadUserCanReadWriteUserData(t *testing.T) {
+	adminDSN := os.Getenv("PG_ADMIN_DSN")
+	if adminDSN == "" {
+		t.Skip("PG_ADMIN_DSN not set, skipping test")
+	}
+
+	// Generate unique names for users
+	readUser := "readuser_shared_" + uuid.New().String()[:8]
+	writeUser := "writeuser_shared_" + uuid.New().String()[:8]
+
+	// 1. Create a write user and a read user
+	writePassword, err := CreatePostgresUser(adminDSN, testDBName, writeUser, "write")
+	if err != nil {
+		t.Fatalf("Failed to create write user %s: %v", writeUser, err)
+	}
+	readPassword, err := CreatePostgresUser(adminDSN, testDBName, readUser, "read")
+	if err != nil {
+		t.Fatalf("Failed to create read user %s: %v", readUser, err)
+	}
+
+	// Defer user deletion
+	defer func() {
+		if err := DeletePostgresUser(adminDSN, testDBName, writeUser); err != nil {
+			t.Errorf("Failed to delete write user %s: %v", writeUser, err)
+		}
+		if err := DeletePostgresUser(adminDSN, testDBName, readUser); err != nil {
+			t.Errorf("Failed to delete read user %s: %v", readUser, err)
+		}
+	}()
+
+	// 2. Write user connects and creates data
+	writeUserDSN := getUserDSN(t, writeUser, writePassword, testDBName)
+	writeDB, err := connectToDB(writeUserDSN)
+	if err != nil {
+		t.Fatalf("Failed to connect to %s as write user %s: %v", testDBName, writeUser, err)
+	}
+	defer writeDB.Close()
+
+	tableName := "shared_data_table"
+	_, err = writeDB.Exec(fmt.Sprintf("CREATE TABLE %s (id INT, data TEXT)", tableName))
+	if err != nil {
+		t.Fatalf("Write user failed to create table: %v", err)
+	}
+	defer writeDB.Exec(fmt.Sprintf("DROP TABLE %s", tableName)) // Defer cleanup
+
+	_, err = writeDB.Exec(fmt.Sprintf("INSERT INTO %s (id, data) VALUES (1, 'shared_content')", tableName))
+	if err != nil {
+		t.Fatalf("Write user failed to insert data: %v", err)
+	}
+
+	// 3. A second write user connects and should be able to read, write, and create.
+	writeUser2 := "writeuser2_shared_" + uuid.New().String()[:8]
+	writePassword2, err := CreatePostgresUser(adminDSN, testDBName, writeUser2, "write")
+	if err != nil {
+		t.Fatalf("Failed to create second write user %s: %v", writeUser2, err)
+	}
+	defer func() {
+		if err := DeletePostgresUser(adminDSN, testDBName, writeUser2); err != nil {
+			t.Errorf("Failed to delete second write user %s: %v", writeUser2, err)
+		}
+	}()
+
+	writeUser2DSN := getUserDSN(t, writeUser2, writePassword2, testDBName)
+	writeDB2, err := connectToDB(writeUser2DSN)
+	if err != nil {
+		t.Fatalf("Failed to connect as second write user %s: %v", writeUser2, err)
+	}
+	defer writeDB2.Close()
+
+	var data string
+	// Verify second write user can read data from the first user's table
+	err = writeDB2.QueryRow(fmt.Sprintf("SELECT data FROM %s WHERE id = 1", tableName)).Scan(&data)
+	if err != nil {
+		t.Fatalf("Second write user failed to select data: %v", err)
+	}
+	if data != "shared_content" {
+		t.Errorf("Second write user expected 'shared_content', got '%s'", data)
+	}
+
+	// Verify second write user can insert data into the first user's table
+	_, err = writeDB2.Exec(fmt.Sprintf("INSERT INTO %s (id, data) VALUES (2, 'more_shared_content')", tableName))
+	if err != nil {
+		t.Fatalf("Second write user failed to insert data: %v", err)
+	}
+
+	// Verify second write user can create a new table
+	tableName2 := "second_write_user_table"
+	_, err = writeDB2.Exec(fmt.Sprintf("CREATE TABLE %s (id INT)", tableName2))
+	if err != nil {
+		t.Fatalf("Second write user failed to create a new table: %v", err)
+	}
+
+	// 4. Read user connects and reads the data
+	readUserDSN := getUserDSN(t, readUser, readPassword, testDBName)
+	readDB, err := connectToDB(readUserDSN)
+	if err != nil {
+		t.Fatalf("Failed to connect to %s as read user %s: %v", testDBName, readUser, err)
+	}
+	defer readDB.Close()
+
+	err = readDB.QueryRow(fmt.Sprintf("SELECT data FROM %s WHERE id = 1", tableName)).Scan(&data)
+	if err != nil {
+		t.Fatalf("Read user failed to select data from %s: %v", tableName, err)
+	}
+
+	if data != "shared_content" {
+		t.Errorf("Expected data 'shared_content', got '%s'", data)
+	}
+
+	err = readDB.QueryRow(fmt.Sprintf("SELECT data FROM %s WHERE id = 2", tableName)).Scan(&data)
+	if err != nil {
+		t.Fatalf("Read user failed to select data from %s: %v", tableName, err)
+	}
+
+	if data != "more_shared_content" {
+		t.Errorf("Expected data 'more_shared_content', got '%s'", data)
+	}
+	defer writeDB2.Exec(fmt.Sprintf("DROP TABLE %s", tableName2))
 }
