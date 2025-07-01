@@ -35,10 +35,7 @@ services:
       PG_ADMIN_DSN: "postgres://admin_user:admin_password@postgres:5432/admin_db?sslmode=disable"
       # For connecting to the application's own metadata tables (if separate or different user)
       # APP_DB_DSN: "postgres://app_user:app_password@postgres:5432/app_metadata_db?sslmode=disable"
-      OIDC_ISSUER_URL: "http://dex:5556/dex" # Internal Docker network hostname
-      OIDC_CLIENT_ID: "pgweb-frontend"
-      OIDC_CLIENT_SECRET: "your-client-secret" # Should be a strong secret
-      OIDC_REDIRECT_URL: "http://localhost:8080/auth/callback"
+      PGWEB_TRUSTED_HEADER: "X-Forwarded-Email"
       GIN_MODE: "debug" # or "release"
       APP_DB_DSN: "postgres://admin_user:admin_password@postgres:5432/admin_db?sslmode=disable"
       SESSION_SECRET_KEY: "local-session-secret"
