@@ -283,7 +283,7 @@ func TestUserPermissionsAndIsolation(t *testing.T) {
 			queryErr := readDB2.QueryRow("SELECT data FROM isolated_test_table LIMIT 1").Scan(&data)
 			if queryErr == nil {
 				t.Errorf("Read user %s unexpectedly queried data from isolated_test_table in %s: %s", readUser, testDBName2, data)
-			} else if !strings.Contains(queryErr.Error(), "permission denied") && !strings.Contains(queryErr.Error(), "access denied") && !strings.Contains(queryErr.Error(), "does not exist") && !strings.Contains(queryErr.Error(), "relation \"isolated_test_table\" does not exist") {
+			} else if !strings.Contains(queryErr.Error(), "permission denied") && !strings.Contains(queryErr.Error(), "access denied") && !strings.Contains(queryErr.Error(), "does not exist") && !strings.Contains(queryErr.Error(), "relation 'isolated_test_table' does not exist") {
 				t.Errorf("Read user %s query on isolated_test_table in %s failed with unexpected error: %v", readUser, testDBName2, queryErr)
 			}
 		} else if !strings.Contains(err.Error(), "permission denied") && !strings.Contains(err.Error(), "does not exist") && !strings.Contains(err.Error(), "FATAL:  database") {
@@ -300,7 +300,7 @@ func TestUserPermissionsAndIsolation(t *testing.T) {
 			queryErr := writeDB2.QueryRow("SELECT data FROM isolated_test_table LIMIT 1").Scan(&data)
 			if queryErr == nil {
 				t.Errorf("Write user %s unexpectedly queried data from isolated_test_table in %s: %s", writeUser, testDBName2, data)
-			} else if !strings.Contains(queryErr.Error(), "permission denied") && !strings.Contains(queryErr.Error(), "access denied") && !strings.Contains(queryErr.Error(), "does not exist") && !strings.Contains(queryErr.Error(), "relation \"isolated_test_table\" does not exist") {
+			} else if !strings.Contains(queryErr.Error(), "permission denied") && !strings.Contains(queryErr.Error(), "access denied") && !strings.Contains(queryErr.Error(), "does not exist") && !strings.Contains(queryErr.Error(), "relation 'isolated_test_table' does not exist") {
 				t.Errorf("Write user %s query on isolated_test_table in %s failed with unexpected error: %v", writeUser, testDBName2, queryErr)
 			}
 		} else if !strings.Contains(err.Error(), "permission denied") && !strings.Contains(err.Error(), "does not exist") && !strings.Contains(err.Error(), "FATAL:  database") {
@@ -547,4 +547,77 @@ func TestReadUserCanReadWriteUserData(t *testing.T) {
 		t.Errorf("Expected data 'more_shared_content', got '%s'", data)
 	}
 	defer writeDB2.Exec(fmt.Sprintf("DROP TABLE %s", tableName2))
+}
+
+// TestExtensions verifies that the uuid-ossp and vector extensions are available and functional.
+func TestExtensions(t *testing.T) {
+	adminDSN := os.Getenv("PG_ADMIN_DSN")
+	if adminDSN == "" {
+		t.Skip("PG_ADMIN_DSN not set, skipping test")
+	}
+
+	// Create a user with 'write' permissions
+	extTestUser := "extuser_" + uuid.New().String()[:8]
+	password, err := CreatePostgresUser(adminDSN, testDBName, extTestUser, "write")
+	if err != nil {
+		t.Fatalf("Failed to create postgres user for extension test: %v", err)
+	}
+	defer func() {
+		err := DeletePostgresUser(adminDSN, testDBName, extTestUser)
+		if err != nil {
+			t.Errorf("Failed to delete extension test user %s: %v", extTestUser, err)
+		}
+	}()
+
+	userDSN := getUserDSN(t, extTestUser, password, testDBName)
+	userDB, err := connectToDB(userDSN)
+	if err != nil {
+		t.Fatalf("Failed to connect to test DB as extension test user: %v", err)
+	}
+	defer userDB.Close()
+
+	// Test uuid-ossp extension
+	t.Run("UUIDOSSP", func(t *testing.T) {
+		var generatedUUID string
+		err := userDB.QueryRow("SELECT uuid_generate_v4()").Scan(&generatedUUID)
+		if err != nil {
+			t.Fatalf("Failed to generate UUID using uuid_generate_v4(): %v", err)
+		}
+		if _, err := uuid.Parse(generatedUUID); err != nil {
+			t.Fatalf("Generated string is not a valid UUID: %v", err)
+		}
+		t.Logf("Successfully generated UUID: %s", generatedUUID)
+	})
+
+	// Test pgvector extension
+	t.Run("PGVector", func(t *testing.T) {
+		// Create a table with a vector column
+		_, err := userDB.Exec("CREATE TABLE items (id serial PRIMARY KEY, embedding vector(3))")
+		if err != nil {
+			t.Fatalf("Failed to create table with vector column: %v", err)
+		}
+		defer func() {
+			_, err := userDB.Exec("DROP TABLE items")
+			if err != nil {
+				t.Errorf("Failed to drop table items: %v", err)
+			}
+		}()
+
+		// Insert data
+		_, err = userDB.Exec("INSERT INTO items (embedding) VALUES ('[1,2,3]'), ('[4,5,6]')")
+		if err != nil {
+			t.Fatalf("Failed to insert data into vector table: %v", err)
+		}
+
+		// Query data
+		var embedding string
+		err = userDB.QueryRow("SELECT embedding FROM items WHERE id = 1").Scan(&embedding)
+		if err != nil {
+			t.Fatalf("Failed to query data from vector table: %v", err)
+		}
+		if embedding != "[1,2,3]" {
+			t.Errorf("Expected embedding '[1,2,3]', got '%s'", embedding)
+		}
+		t.Logf("Successfully used pgvector: %s", embedding)
+	})
 }
