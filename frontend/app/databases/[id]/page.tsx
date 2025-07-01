@@ -250,7 +250,7 @@ export default function DatabaseDetailPage() {
               <CardTitle>PostgreSQL Users</CardTitle>
               <CardDescription>Manage database users and their permissions</CardDescription>
             </div>
-            <Button onClick={() => setCreateUserDialogOpen(true)}>
+            <Button id="create-user-on-page" onClick={() => setCreateUserDialogOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
               Create User
             </Button>

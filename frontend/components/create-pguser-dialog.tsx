@@ -66,12 +66,18 @@ export function CreatePgUserDialog({ open, onOpenChange, onUserCreated, database
 
       const newUser = await createPgUser(databaseId, username.trim(), permission)
       setCreatedUser(newUser)
-      onUserCreated(newUser)
     } catch (error) {
       setError("Failed to create user. Please try again.")
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleDone = () => {
+    if (createdUser) {
+      onUserCreated(createdUser)
+    }
+    handleOpenChange(false)
   }
 
   const handleOpenChange = (newOpen: boolean) => {
@@ -140,7 +146,7 @@ export function CreatePgUserDialog({ open, onOpenChange, onUserCreated, database
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => handleOpenChange(false)}>Done</Button>
+            <Button onClick={handleDone}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
