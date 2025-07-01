@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -179,6 +180,22 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 		return fmt.Errorf("failed to revoke ALL on public schema from PUBLIC: %w", err)
 	}
 
+	// Always create uuid-ossp extension
+	log.Printf("Creating uuid-ossp extension in database %s", safeDBName)
+	_, err = newDB.Exec("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"")
+	if err != nil {
+		log.Printf("Failed to create uuid-ossp extension in %s. Attempting to drop it. Error: %v", safeDBName, err)
+		_, dropErr := adminDB.Exec(fmt.Sprintf("DROP DATABASE %s", safeDBName)) // Sanitize again
+		if dropErr != nil {
+			log.Printf("CRITICAL: Failed to create extension AND failed to drop DB: %v. Manual cleanup for %s.", dropErr, safeDBName)
+		} else {
+			log.Printf("Successfully dropped database %s after failing to create extension.", safeDBName)
+		}
+		return fmt.Errorf("failed to create uuid-ossp extension in database '%s': %w", safeDBName, err)
+	}
+	log.Printf("uuid-ossp extension created successfully in %s.", safeDBName)
+
+	// Always create vector extension
 	log.Printf("Creating vector extension in database %s", safeDBName)
 	_, err = newDB.Exec("CREATE EXTENSION IF NOT EXISTS vector")
 	if err != nil {
@@ -192,6 +209,26 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 		return fmt.Errorf("failed to create vector extension in database '%s': %w", safeDBName, err)
 	}
 	log.Printf("vector extension created successfully in %s.", safeDBName)
+
+	// Create other allowed extensions from environment variable
+	allowedExtensionsStr := os.Getenv("PGWEB_ALLOWED_EXTENSIONS")
+	if allowedExtensionsStr != "" {
+		extensions := strings.Split(allowedExtensionsStr, ",")
+		for _, ext := range extensions {
+			ext = strings.TrimSpace(ext)
+			if ext == "" {
+				continue
+			}
+			log.Printf("Creating extension %s in database %s", ext, safeDBName)
+			_, err = newDB.Exec(fmt.Sprintf("CREATE EXTENSION IF NOT EXISTS \"%s\"", ext))
+			if err != nil {
+				log.Printf("Failed to create extension %s in %s. Error: %v", ext, safeDBName, err)
+				// Do not drop the database for non-critical extensions, just log the error.
+			} else {
+				log.Printf("Extension %s created successfully in %s.", ext, safeDBName)
+			}
+		}
+	}
 
 	// Harden the database by revoking default privileges from PUBLIC, as per PGDOC.md.
 	log.Printf("Revoking default public access on database %s", safeDBName)
