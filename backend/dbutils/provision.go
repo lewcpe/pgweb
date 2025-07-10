@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	safeIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*`)
+	safeIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 	// Character set for password generation
 	passwordChars  = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
 	passwordLength = 16
