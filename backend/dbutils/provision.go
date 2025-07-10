@@ -17,51 +17,32 @@ import (
 )
 
 var (
-	safeIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*`)
+	safeIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 	// Character set for password generation
 	passwordChars  = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
 	passwordLength = 16
 )
 
-// sanitizeIdentifier cleans a string to be a safe PostgreSQL identifier.
+// sanitizeIdentifier validates a string to be a safe PostgreSQL identifier.
+// It checks if the name adheres to the pattern: starts with a lowercase letter,
+// followed by lowercase letters, numbers, or underscores, and is not longer
+// than 63 characters.
 func sanitizeIdentifier(name string) (string, error) {
-	name = strings.ToLower(name)
-	// Replace common problematic characters first
-	name = strings.ReplaceAll(name, "-", "_")
-	name = strings.ReplaceAll(name, " ", "_")
-
-	var sb strings.Builder
-	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
-			sb.WriteRune(r)
-		}
-	}
-	name = sb.String()
-
-	if len(name) == 0 {
-		return "", fmt.Errorf("sanitized name is empty")
-	}
-	if !(name[0] >= 'a' && name[0] <= 'z') {
-		// If it doesn't start with a letter, prefix one. This is a simple fix.
-		// A better approach might be to reject or require user to fix.
-		name = "u_" + name
-	}
-
+	// Check length first. PostgreSQL identifiers are typically limited to 63 characters.
 	if len(name) > 63 {
-		name = name[:63]
-	}
-	name = strings.TrimRight(name, "_")
-	if len(name) == 0 { // Re-check after potential trim
-		return "", fmt.Errorf("sanitized name became empty after trimming trailing underscores")
-	}
-	if !(name[0] >= 'a' && name[0] <= 'z') { // Re-check start char
-		return "", fmt.Errorf("sanitized name '%s' does not start with a letter after processing", name)
+		return "", fmt.Errorf("identifier '%s' exceeds maximum length of 63 characters", name)
 	}
 
+	// Check if the name matches the required pattern.
+	// The pattern ^[a-z][a-z0-9_]*$ means:
+	// - ^[a-z]: Must start with a lowercase letter.
+	// - [a-z0-9_]*: Followed by zero or more lowercase letters, digits, or underscores.
+	// - $: End of string.
 	if !safeIdentifierPattern.MatchString(name) {
-		return "", fmt.Errorf("sanitized name '%s' does not match safe identifier pattern ^[a-z][a-z0-9_]*$", name)
+		return "", fmt.Errorf("identifier '%s' is invalid: must start with a lowercase letter and contain only lowercase letters, numbers, or underscores", name)
 	}
 
+	// If all checks pass, the name is considered valid and returned as is.
 	return name, nil
 }
 
