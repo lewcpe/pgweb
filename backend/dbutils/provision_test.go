@@ -620,6 +620,24 @@ func TestExtensions(t *testing.T) {
 		}
 		t.Logf("Successfully used pgvector: %s", embedding)
 	})
+
+	// Test creating a new extension
+	t.Run("CreateExtension", func(t *testing.T) {
+		// Attempt to create an extension that is not pre-installed.
+		// 'hstore' is a good candidate as it's a standard contrib module.
+		_, err := userDB.Exec(`CREATE EXTENSION IF NOT EXISTS "hstore"`)
+		if err != nil {
+			t.Fatalf("User with write role failed to create extension 'hstore': %v", err)
+		}
+		t.Logf("Successfully created extension 'hstore'")
+
+		// Drop the extension to clean up the state for other tests.
+		_, err = userDB.Exec(`DROP EXTENSION IF EXISTS "hstore"`)
+		if err != nil {
+			t.Fatalf("User with write role failed to drop extension 'hstore': %v", err)
+		}
+		t.Logf("Successfully dropped extension 'hstore'")
+	})
 }
 
 func TestSanitizeIdentifier(t *testing.T) {
