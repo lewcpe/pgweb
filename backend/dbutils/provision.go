@@ -242,6 +242,12 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 		return fmt.Errorf("failed to grant CONNECT to roles: %w", err)
 	}
 
+	// Grant CREATE on the database to the write role, allowing extension creation.
+	_, err = newDB.Exec(fmt.Sprintf("GRANT CREATE ON DATABASE %s TO %s", safeDBName, writeRole))
+	if err != nil {
+		return fmt.Errorf("failed to grant CREATE on database to write role: %w", err)
+	}
+
 	// --- Schema and Role Permissions ---
 
 	// Grant basic USAGE on the public schema to both roles.

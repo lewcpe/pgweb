@@ -620,6 +620,84 @@ func TestExtensions(t *testing.T) {
 		}
 		t.Logf("Successfully used pgvector: %s", embedding)
 	})
+
+	// Test creating a new extension
+	t.Run("CreateExtension", func(t *testing.T) {
+		// Attempt to create an extension that is not pre-installed.
+		// 'hstore' is a good candidate as it's a standard contrib module.
+		_, err := userDB.Exec(`CREATE EXTENSION IF NOT EXISTS "hstore"`)
+		if err != nil {
+			t.Fatalf("User with write role failed to create extension 'hstore': %v", err)
+		}
+		t.Logf("Successfully created extension 'hstore'")
+
+		// Drop the extension to clean up the state for other tests.
+		_, err = userDB.Exec(`DROP EXTENSION IF EXISTS "hstore"`)
+		if err != nil {
+			t.Fatalf("User with write role failed to drop extension 'hstore': %v", err)
+		}
+		t.Logf("Successfully dropped extension 'hstore'")
+	})
+}
+
+func TestSanitizeIdentifier(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		want      string
+		expectErr bool
+		errSubstr string // Substring to check for in the error message
+	}{
+		// Valid cases
+		{"valid simple", "mydb", "mydb", false, ""},
+		{"valid with numbers", "mydb123", "mydb123", false, ""},
+		{"valid with underscores", "my_db_123", "my_db_123", false, ""},
+		{"valid single char", "a", "a", false, ""},
+		{"valid max length", strings.Repeat("a", 63), strings.Repeat("a", 63), false, ""},
+
+		// Invalid cases - pattern mismatch
+		{"invalid start with number", "1mydb", "", true, "must start with a lowercase letter"},
+		{"invalid start with underscore", "_mydb", "", true, "must start with a lowercase letter"},
+		{"invalid with uppercase", "MyDb", "", true, "contain only lowercase letters"},
+		{"invalid with hyphen", "my-db", "", true, "contain only lowercase letters"},
+		{"invalid with space", "my db", "", true, "contain only lowercase letters"},
+		{"invalid with special char", "mydb!", "", true, "contain only lowercase letters"},
+		{"invalid empty string", "", "", true, "must start with a lowercase letter"}, // or "invalid" depending on exact error
+
+		// Invalid cases - too long
+		{"invalid too long", strings.Repeat("a", 64), "", true, "exceeds maximum length"},
+
+		// Cases that would have been changed by old sanitizer but now error
+		{"old: leading number", "1database", "", true, "must start with a lowercase letter"},
+		{"old: uppercase", "UPPERCASEDB", "", true, "contain only lowercase letters"},
+		{"old: hyphens", "hyphen-db-name", "", true, "contain only lowercase letters"},
+		{"old: spaces", "db with spaces", "", true, "contain only lowercase letters"},
+		{"old: mixed issues", "1_My-Db!", "", true, "must start with a lowercase letter"}, // Error could be for start or chars
+		{"old: starts with underscore then fixed", "_fixed_db", "", true, "must start with a lowercase letter"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := sanitizeIdentifier(tt.input)
+			if tt.expectErr {
+				if err == nil {
+					t.Errorf("sanitizeIdentifier(%q) expected error, got nil", tt.input)
+					return
+				}
+				if tt.errSubstr != "" && !strings.Contains(err.Error(), tt.errSubstr) {
+					t.Errorf("sanitizeIdentifier(%q) error = %v, expected error containing %q", tt.input, err, tt.errSubstr)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("sanitizeIdentifier(%q) unexpected error: %v", tt.input, err)
+					return
+				}
+				if got != tt.want {
+					t.Errorf("sanitizeIdentifier(%q) = %q, want %q", tt.input, got, tt.want)
+				}
+			}
+		})
+	}
 }
 
 func TestSanitizeIdentifier(t *testing.T) {
