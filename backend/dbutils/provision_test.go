@@ -61,6 +61,10 @@ func cleanup(adminDSN string) {
 	if err != nil {
 		fmt.Printf("Failed to drop test database: %v", err)
 	}
+
+	// Drop roles associated with the test database
+	_, _ = adminDB.Exec(fmt.Sprintf("DROP ROLE IF EXISTS %s_read", testDBName))
+	_, _ = adminDB.Exec(fmt.Sprintf("DROP ROLE IF EXISTS %s_write", testDBName))
 }
 
 // getUserDSN constructs a DSN for a given user and database.
@@ -85,6 +89,9 @@ func TestUserPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create postgres user: %v", err)
 	}
+	defer func() {
+		_ = DeletePostgresUser(adminDSN, testDBName, testUser)
+	}()
 
 	userDSN := getUserDSN(t, testUser, password, testDBName)
 
@@ -346,12 +353,16 @@ func TestUserCannotCreateOrDropDB(t *testing.T) {
 	}
 
 	// 1. Create a user with 'write' permissions
-	password, err := CreatePostgresUser(adminDSN, testDBName, testUser, "write")
+	localTestUser := "testuser_unique_" + uuid.New().String()[:8]
+	password, err := CreatePostgresUser(adminDSN, testDBName, localTestUser, "write")
 	if err != nil {
 		t.Fatalf("Failed to create postgres user: %v", err)
 	}
+	defer func() {
+		_ = DeletePostgresUser(adminDSN, testDBName, localTestUser)
+	}()
 
-	userDSN := getUserDSN(t, testUser, password, testDBName)
+	userDSN := getUserDSN(t, localTestUser, password, testDBName)
 
 	userDB, err := connectToDB(userDSN)
 	if err != nil {
@@ -378,7 +389,7 @@ func TestUserCannotCreateOrDropDB(t *testing.T) {
 	}
 
 	// 4. Cleanup the user
-	err = DeletePostgresUser(adminDSN, testDBName, testUser)
+	err = DeletePostgresUser(adminDSN, testDBName, localTestUser)
 	if err != nil {
 		t.Fatalf("Failed to delete postgres user: %v", err)
 	}
@@ -700,62 +711,3 @@ func TestSanitizeIdentifier(t *testing.T) {
 	}
 }
 
-func TestSanitizeIdentifier(t *testing.T) {
-	tests := []struct {
-		name      string
-		input     string
-		want      string
-		expectErr bool
-		errSubstr string // Substring to check for in the error message
-	}{
-		// Valid cases
-		{"valid simple", "mydb", "mydb", false, ""},
-		{"valid with numbers", "mydb123", "mydb123", false, ""},
-		{"valid with underscores", "my_db_123", "my_db_123", false, ""},
-		{"valid single char", "a", "a", false, ""},
-		{"valid max length", strings.Repeat("a", 63), strings.Repeat("a", 63), false, ""},
-
-		// Invalid cases - pattern mismatch
-		{"invalid start with number", "1mydb", "", true, "must start with a lowercase letter"},
-		{"invalid start with underscore", "_mydb", "", true, "must start with a lowercase letter"},
-		{"invalid with uppercase", "MyDb", "", true, "contain only lowercase letters"},
-		{"invalid with hyphen", "my-db", "", true, "contain only lowercase letters"},
-		{"invalid with space", "my db", "", true, "contain only lowercase letters"},
-		{"invalid with special char", "mydb!", "", true, "contain only lowercase letters"},
-		{"invalid empty string", "", "", true, "must start with a lowercase letter"}, // or "invalid" depending on exact error
-
-		// Invalid cases - too long
-		{"invalid too long", strings.Repeat("a", 64), "", true, "exceeds maximum length"},
-
-		// Cases that would have been changed by old sanitizer but now error
-		{"old: leading number", "1database", "", true, "must start with a lowercase letter"},
-		{"old: uppercase", "UPPERCASEDB", "", true, "contain only lowercase letters"},
-		{"old: hyphens", "hyphen-db-name", "", true, "contain only lowercase letters"},
-		{"old: spaces", "db with spaces", "", true, "contain only lowercase letters"},
-		{"old: mixed issues", "1_My-Db!", "", true, "must start with a lowercase letter"}, // Error could be for start or chars
-		{"old: starts with underscore then fixed", "_fixed_db", "", true, "must start with a lowercase letter"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := sanitizeIdentifier(tt.input)
-			if tt.expectErr {
-				if err == nil {
-					t.Errorf("sanitizeIdentifier(%q) expected error, got nil", tt.input)
-					return
-				}
-				if tt.errSubstr != "" && !strings.Contains(err.Error(), tt.errSubstr) {
-					t.Errorf("sanitizeIdentifier(%q) error = %v, expected error containing %q", tt.input, err, tt.errSubstr)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("sanitizeIdentifier(%q) unexpected error: %v", tt.input, err)
-					return
-				}
-				if got != tt.want {
-					t.Errorf("sanitizeIdentifier(%q) = %q, want %q", tt.input, got, tt.want)
-				}
-			}
-		})
-	}
-}
