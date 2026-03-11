@@ -157,8 +157,8 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 	if _, err := newDB.Exec(fmt.Sprintf("REVOKE CONNECT ON DATABASE %s FROM PUBLIC", safeDBName)); err != nil {
 		return fmt.Errorf("failed to revoke CONNECT on database from PUBLIC: %w", err)
 	}
-	if _, err := newDB.Exec("REVOKE ALL ON SCHEMA public FROM PUBLIC"); err != nil {
-		return fmt.Errorf("failed to revoke ALL on public schema from PUBLIC: %w", err)
+	if _, err := newDB.Exec("GRANT USAGE, CREATE ON SCHEMA public TO PUBLIC"); err != nil {
+		return fmt.Errorf("failed to grant USAGE, CREATE on public schema to PUBLIC: %w", err)
 	}
 
 	// Always create uuid-ossp extension
@@ -216,8 +216,8 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 	if _, err := newDB.Exec(fmt.Sprintf("REVOKE CONNECT ON DATABASE %s FROM PUBLIC", safeDBName)); err != nil {
 		return fmt.Errorf("failed to revoke CONNECT on database from PUBLIC: %w", err)
 	}
-	if _, err := newDB.Exec("REVOKE ALL ON SCHEMA public FROM PUBLIC"); err != nil {
-		return fmt.Errorf("failed to revoke ALL on public schema from PUBLIC: %w", err)
+	if _, err := newDB.Exec("GRANT USAGE, CREATE ON SCHEMA public TO PUBLIC"); err != nil {
+		return fmt.Errorf("failed to grant USAGE, CREATE on public schema to PUBLIC: %w", err)
 	}
 
 	// New: Create read and write roles for the database
