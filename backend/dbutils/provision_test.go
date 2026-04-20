@@ -670,7 +670,7 @@ func TestSanitizeIdentifier(t *testing.T) {
 		{"invalid start with number", "1mydb", "", true, "must start with a lowercase letter"},
 		{"invalid start with underscore", "_mydb", "", true, "must start with a lowercase letter"},
 		{"invalid with uppercase", "MyDb", "", true, "contain only lowercase letters"},
-		{"invalid with hyphen", "my-db", "", true, "contain only lowercase letters"},
+		{"valid with hyphen", "my-db", "my-db", false, ""},
 		{"invalid with space", "my db", "", true, "contain only lowercase letters"},
 		{"invalid with special char", "mydb!", "", true, "contain only lowercase letters"},
 		{"invalid empty string", "", "", true, "must start with a lowercase letter"}, // or "invalid" depending on exact error
@@ -681,7 +681,7 @@ func TestSanitizeIdentifier(t *testing.T) {
 		// Cases that would have been changed by old sanitizer but now error
 		{"old: leading number", "1database", "", true, "must start with a lowercase letter"},
 		{"old: uppercase", "UPPERCASEDB", "", true, "contain only lowercase letters"},
-		{"old: hyphens", "hyphen-db-name", "", true, "contain only lowercase letters"},
+		{"valid: hyphens", "hyphen-db-name", "hyphen-db-name", false, ""},
 		{"old: spaces", "db with spaces", "", true, "contain only lowercase letters"},
 		{"old: mixed issues", "1_My-Db!", "", true, "must start with a lowercase letter"}, // Error could be for start or chars
 		{"old: starts with underscore then fixed", "_fixed_db", "", true, "must start with a lowercase letter"},
