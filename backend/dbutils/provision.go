@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	safeIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	safeIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 	// Character set for password generation
 	passwordChars  = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
 	passwordLength = 16
@@ -39,7 +39,7 @@ func sanitizeIdentifier(name string) (string, error) {
 	// - [a-z0-9_]*: Followed by zero or more lowercase letters, digits, or underscores.
 	// - $: End of string.
 	if !safeIdentifierPattern.MatchString(name) {
-		return "", fmt.Errorf("identifier '%s' is invalid: must start with a lowercase letter and contain only lowercase letters, numbers, or underscores", name)
+		return "", fmt.Errorf("identifier '%s' is invalid: must start with a lowercase letter and contain only lowercase letters, numbers, hyphens, or underscores", name)
 	}
 
 	// If all checks pass, the name is considered valid and returned as is.
@@ -130,7 +130,7 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 	log.Printf("Executing CREATE DATABASE %s", safeDBName)
 	// Identifiers like database names cannot be parameterized directly in CREATE DATABASE.
 	// Sanitize rigorously and use fmt.Sprintf.
-	_, err = adminDB.Exec(fmt.Sprintf("CREATE DATABASE %s", safeDBName))
+	_, err = adminDB.Exec(fmt.Sprintf("CREATE DATABASE %s", pq.QuoteIdentifier(safeDBName)))
 	if err != nil {
 		return fmt.Errorf("failed to execute CREATE DATABASE %s: %w", safeDBName, err)
 	}
@@ -142,7 +142,7 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 	newDB, err := connectToDB(newDbDSN)
 	if err != nil {
 		log.Printf("Failed to connect to newly created database %s. Attempting to drop it.", safeDBName)
-		_, dropErr := adminDB.Exec(fmt.Sprintf("DROP DATABASE %s", safeDBName)) // Sanitize again
+		_, dropErr := adminDB.Exec(fmt.Sprintf("DROP DATABASE %s", pq.QuoteIdentifier(safeDBName))) // Sanitize again
 		if dropErr != nil {
 			log.Printf("CRITICAL: Failed to connect to new DB AND failed to drop it: %v. Manual cleanup for %s.", dropErr, safeDBName)
 		} else {
@@ -154,7 +154,7 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 
 	// Harden the database by revoking default privileges from PUBLIC, as per PGDOC.md.
 	log.Printf("Revoking default public access on database %s", safeDBName)
-	if _, err := newDB.Exec(fmt.Sprintf("REVOKE CONNECT ON DATABASE %s FROM PUBLIC", safeDBName)); err != nil {
+	if _, err := newDB.Exec(fmt.Sprintf("REVOKE CONNECT ON DATABASE %s FROM PUBLIC", pq.QuoteIdentifier(safeDBName))); err != nil {
 		return fmt.Errorf("failed to revoke CONNECT on database from PUBLIC: %w", err)
 	}
 	if _, err := newDB.Exec("GRANT USAGE, CREATE ON SCHEMA public TO PUBLIC"); err != nil {
@@ -166,7 +166,7 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 	_, err = newDB.Exec("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"")
 	if err != nil {
 		log.Printf("Failed to create uuid-ossp extension in %s. Attempting to drop it. Error: %v", safeDBName, err)
-		_, dropErr := adminDB.Exec(fmt.Sprintf("DROP DATABASE %s", safeDBName)) // Sanitize again
+		_, dropErr := adminDB.Exec(fmt.Sprintf("DROP DATABASE %s", pq.QuoteIdentifier(safeDBName))) // Sanitize again
 		if dropErr != nil {
 			log.Printf("CRITICAL: Failed to create extension AND failed to drop DB: %v. Manual cleanup for %s.", dropErr, safeDBName)
 		} else {
@@ -181,7 +181,7 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 	_, err = newDB.Exec("CREATE EXTENSION IF NOT EXISTS vector")
 	if err != nil {
 		log.Printf("Failed to create vector extension in %s. Attempting to drop it. Error: %v", safeDBName, err)
-		_, dropErr := adminDB.Exec(fmt.Sprintf("DROP DATABASE %s", safeDBName)) // Sanitize again
+		_, dropErr := adminDB.Exec(fmt.Sprintf("DROP DATABASE %s", pq.QuoteIdentifier(safeDBName))) // Sanitize again
 		if dropErr != nil {
 			log.Printf("CRITICAL: Failed to create extension AND failed to drop DB: %v. Manual cleanup for %s.", dropErr, safeDBName)
 		} else {
@@ -201,7 +201,7 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 				continue
 			}
 			log.Printf("Creating extension %s in database %s", ext, safeDBName)
-			_, err = newDB.Exec(fmt.Sprintf("CREATE EXTENSION IF NOT EXISTS \"%s\"", ext))
+			_, err = newDB.Exec(fmt.Sprintf("CREATE EXTENSION IF NOT EXISTS %s", pq.QuoteIdentifier(ext)))
 			if err != nil {
 				log.Printf("Failed to create extension %s in %s. Error: %v", ext, safeDBName, err)
 				// Do not drop the database for non-critical extensions, just log the error.
@@ -213,7 +213,7 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 
 	// Harden the database by revoking default privileges from PUBLIC, as per PGDOC.md.
 	log.Printf("Revoking default public access on database %s", safeDBName)
-	if _, err := newDB.Exec(fmt.Sprintf("REVOKE CONNECT ON DATABASE %s FROM PUBLIC", safeDBName)); err != nil {
+	if _, err := newDB.Exec(fmt.Sprintf("REVOKE CONNECT ON DATABASE %s FROM PUBLIC", pq.QuoteIdentifier(safeDBName))); err != nil {
 		return fmt.Errorf("failed to revoke CONNECT on database from PUBLIC: %w", err)
 	}
 	if _, err := newDB.Exec("GRANT USAGE, CREATE ON SCHEMA public TO PUBLIC"); err != nil {
@@ -225,25 +225,25 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 	writeRole := fmt.Sprintf("%s_write", safeDBName)
 
 	log.Printf("Creating role %s for database %s", readRole, safeDBName)
-	_, err = newDB.Exec(fmt.Sprintf("CREATE ROLE %s", readRole))
+	_, err = newDB.Exec(fmt.Sprintf("CREATE ROLE %s", pq.QuoteIdentifier(readRole)))
 	if err != nil {
 		return fmt.Errorf("failed to create read role %s: %w", readRole, err)
 	}
 
 	log.Printf("Creating role %s for database %s", writeRole, safeDBName)
-	_, err = newDB.Exec(fmt.Sprintf("CREATE ROLE %s", writeRole))
+	_, err = newDB.Exec(fmt.Sprintf("CREATE ROLE %s", pq.QuoteIdentifier(writeRole)))
 	if err != nil {
 		return fmt.Errorf("failed to create write role %s: %w", writeRole, err)
 	}
 
 	// Grant CONNECT on the database to both roles
-	_, err = newDB.Exec(fmt.Sprintf("GRANT CONNECT ON DATABASE %s TO %s, %s", safeDBName, readRole, writeRole))
+	_, err = newDB.Exec(fmt.Sprintf("GRANT CONNECT ON DATABASE %s TO %s, %s", pq.QuoteIdentifier(safeDBName), pq.QuoteIdentifier(readRole), pq.QuoteIdentifier(writeRole)))
 	if err != nil {
 		return fmt.Errorf("failed to grant CONNECT to roles: %w", err)
 	}
 
 	// Grant CREATE on the database to the write role, allowing extension creation.
-	_, err = newDB.Exec(fmt.Sprintf("GRANT CREATE ON DATABASE %s TO %s", safeDBName, writeRole))
+	_, err = newDB.Exec(fmt.Sprintf("GRANT CREATE ON DATABASE %s TO %s", pq.QuoteIdentifier(safeDBName), pq.QuoteIdentifier(writeRole)))
 	if err != nil {
 		return fmt.Errorf("failed to grant CREATE on database to write role: %w", err)
 	}
@@ -251,31 +251,31 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 	// --- Schema and Role Permissions ---
 
 	// Grant basic USAGE on the public schema to both roles.
-	_, err = newDB.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA public TO %s, %s", readRole, writeRole))
+	_, err = newDB.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA public TO %s, %s", pq.QuoteIdentifier(readRole), pq.QuoteIdentifier(writeRole)))
 	if err != nil {
 		return fmt.Errorf("failed to grant USAGE on public schema to roles: %w", err)
 	}
 
 	// Grant CREATE permission on the public schema to the write role, so it can create tables.
-	_, err = newDB.Exec(fmt.Sprintf("GRANT CREATE ON SCHEMA public TO %s", writeRole))
+	_, err = newDB.Exec(fmt.Sprintf("GRANT CREATE ON SCHEMA public TO %s", pq.QuoteIdentifier(writeRole)))
 	if err != nil {
 		return fmt.Errorf("failed to grant CREATE on public schema to write role %s: %w", writeRole, err)
 	}
 
 	// Grant privileges on existing objects (none at this point, but good practice).
-	_, err = newDB.Exec(fmt.Sprintf("GRANT SELECT ON ALL TABLES IN SCHEMA public TO %s", readRole))
+	_, err = newDB.Exec(fmt.Sprintf("GRANT SELECT ON ALL TABLES IN SCHEMA public TO %s", pq.QuoteIdentifier(readRole)))
 	if err != nil {
 		return fmt.Errorf("failed to grant SELECT on existing public tables to read role %s: %w", readRole, err)
 	}
-	_, err = newDB.Exec(fmt.Sprintf("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO %s", readRole))
+	_, err = newDB.Exec(fmt.Sprintf("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO %s", pq.QuoteIdentifier(readRole)))
 	if err != nil {
 		return fmt.Errorf("failed to grant SELECT on existing public sequences to read role %s: %w", readRole, err)
 	}
-	_, err = newDB.Exec(fmt.Sprintf("GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO %s", writeRole))
+	_, err = newDB.Exec(fmt.Sprintf("GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO %s", pq.QuoteIdentifier(writeRole)))
 	if err != nil {
 		return fmt.Errorf("failed to grant ALL on existing public tables to write role %s: %w", writeRole, err)
 	}
-	_, err = newDB.Exec(fmt.Sprintf("GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO %s", writeRole))
+	_, err = newDB.Exec(fmt.Sprintf("GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO %s", pq.QuoteIdentifier(writeRole)))
 	if err != nil {
 		return fmt.Errorf("failed to grant ALL on existing public sequences to write role %s: %w", writeRole, err)
 	}
@@ -288,34 +288,34 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 	}
 
 	log.Printf("Temporarily granting role %s to admin user %s to set default privileges", writeRole, currentUser)
-	_, err = newDB.Exec(fmt.Sprintf("GRANT %s TO %s", writeRole, currentUser))
+	_, err = newDB.Exec(fmt.Sprintf("GRANT %s TO %s", pq.QuoteIdentifier(writeRole), pq.QuoteIdentifier(currentUser)))
 	if err != nil {
 		return fmt.Errorf("failed to grant write role to admin user '%s': %w", currentUser, err)
 	}
 
 	// For objects created by writeRole, grant SELECT to PUBLIC.
 	// This is safe because only authenticated roles can connect to the database.
-	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA public GRANT SELECT ON TABLES TO PUBLIC", writeRole))
+	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA public GRANT SELECT ON TABLES TO PUBLIC", pq.QuoteIdentifier(writeRole)))
 	if err != nil {
 		return fmt.Errorf("failed to set default SELECT on tables for PUBLIC: %w", err)
 	}
-	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA public GRANT SELECT ON SEQUENCES TO PUBLIC", writeRole))
+	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA public GRANT SELECT ON SEQUENCES TO PUBLIC", pq.QuoteIdentifier(writeRole)))
 	if err != nil {
 		return fmt.Errorf("failed to set default SELECT on sequences for PUBLIC: %w", err)
 	}
 
 	// Grant write-level privileges only to the write role.
-	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA public GRANT INSERT, UPDATE, DELETE, TRUNCATE ON TABLES TO %s", writeRole, writeRole))
+	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA public GRANT INSERT, UPDATE, DELETE, TRUNCATE ON TABLES TO %s", pq.QuoteIdentifier(writeRole), pq.QuoteIdentifier(writeRole)))
 	if err != nil {
 		return fmt.Errorf("failed to set default write privileges on tables for write role: %w", err)
 	}
-	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA public GRANT UPDATE ON SEQUENCES TO %s", writeRole, writeRole))
+	_, err = newDB.Exec(fmt.Sprintf("ALTER DEFAULT PRIVILEGES FOR ROLE %s IN SCHEMA public GRANT UPDATE ON SEQUENCES TO %s", pq.QuoteIdentifier(writeRole), pq.QuoteIdentifier(writeRole)))
 	if err != nil {
 		return fmt.Errorf("failed to set default write privileges on sequences for write role: %w", err)
 	}
 
 	log.Printf("Revoking role %s from admin user %s", writeRole, currentUser)
-	_, err = newDB.Exec(fmt.Sprintf("REVOKE %s FROM %s", writeRole, currentUser))
+	_, err = newDB.Exec(fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(writeRole), pq.QuoteIdentifier(currentUser)))
 	if err != nil {
 		log.Printf("Warning: failed to revoke write role from admin user '%s': %v", currentUser, err)
 	}
@@ -376,7 +376,7 @@ func CreatePostgresUser(pgAdminDSN, targetDbName, pgUserName, permissionLevel st
 	// Passwords should be quoted as literals in CREATE USER statements.
 	// The pq driver's QuoteLiteral function handles proper escaping.
 	quotedPassword := pq.QuoteLiteral(generatedPassword)
-	createUserSQL := fmt.Sprintf("CREATE USER %s WITH PASSWORD %s NOSUPERUSER NOCREATEDB NOCREATEROLE", safePgUserName, quotedPassword)
+	createUserSQL := fmt.Sprintf("CREATE USER %s WITH PASSWORD %s NOSUPERUSER NOCREATEDB NOCREATEROLE", pq.QuoteIdentifier(safePgUserName), quotedPassword)
 	_, err = db.Exec(createUserSQL)
 	if err != nil {
 		return "", fmt.Errorf("failed to create user %s: %w", safePgUserName, err)
@@ -392,12 +392,12 @@ func CreatePostgresUser(pgAdminDSN, targetDbName, pgUserName, permissionLevel st
 		roleName = fmt.Sprintf("%s_write", targetDbName)
 	}
 
-	grantRoleSQL := fmt.Sprintf("GRANT %s TO %s", roleName, safePgUserName)
+	grantRoleSQL := fmt.Sprintf("GRANT %s TO %s", pq.QuoteIdentifier(roleName), pq.QuoteIdentifier(safePgUserName))
 	_, err = db.Exec(grantRoleSQL)
 	if err != nil {
 		// Attempt to drop the user if role grant fails to avoid inconsistent state
 		log.Printf("Failed to grant role to user %s: %v. Attempting to drop user.", safePgUserName, err)
-		_, dropUserErr := db.Exec(fmt.Sprintf("DROP USER IF EXISTS %s", safePgUserName))
+		_, dropUserErr := db.Exec(fmt.Sprintf("DROP USER IF EXISTS %s", pq.QuoteIdentifier(safePgUserName)))
 		if dropUserErr != nil {
 			log.Printf("CRITICAL: Failed to grant role AND failed to drop user: %v. Manual cleanup for user %s.", dropUserErr, safePgUserName)
 		}
@@ -408,14 +408,14 @@ func CreatePostgresUser(pgAdminDSN, targetDbName, pgUserName, permissionLevel st
 	// For write users, set their default role to the writeRole.
 	// This ensures that objects they create are owned by the writeRole, not the user.
 	if permissionLevel == "write" {
-		setRoleSQL := fmt.Sprintf("ALTER ROLE %s SET ROLE %s", safePgUserName, roleName)
+		setRoleSQL := fmt.Sprintf("ALTER ROLE %s SET ROLE %s", pq.QuoteIdentifier(safePgUserName), pq.QuoteIdentifier(roleName))
 		if _, err := db.Exec(setRoleSQL); err != nil {
 			return "", fmt.Errorf("failed to set default role for user %s: %w", safePgUserName, err)
 		}
 		log.Printf("Set default role for user %s to %s.", safePgUserName, roleName)
 
 		// Also set the search path to ensure objects are created in the public schema.
-		setSearchPathSQL := fmt.Sprintf("ALTER ROLE %s SET search_path TO public", safePgUserName)
+		setSearchPathSQL := fmt.Sprintf("ALTER ROLE %s SET search_path TO public", pq.QuoteIdentifier(safePgUserName))
 		if _, err := db.Exec(setSearchPathSQL); err != nil {
 			log.Printf("Warning: failed to set search_path for user %s: %v", safePgUserName, err)
 		}
@@ -448,7 +448,7 @@ func RegeneratePostgresUserPassword(pgAdminDSN, targetDbName, pgUserName string)
 	// Using a parameterized query for the password in an ALTER USER is not standard.
 	// QuoteLiteral handles escaping correctly.
 	quotedPassword := pq.QuoteLiteral(newGeneratedPassword)
-	alterUserSQL := fmt.Sprintf("ALTER USER %s WITH PASSWORD %s", safePgUserName, quotedPassword)
+	alterUserSQL := fmt.Sprintf("ALTER USER %s WITH PASSWORD %s", pq.QuoteIdentifier(safePgUserName), quotedPassword)
 
 	_, err = db.Exec(alterUserSQL)
 	if err != nil {
@@ -475,23 +475,23 @@ func DeletePostgresUser(pgAdminDSN, targetDbName, pgUserName string) error {
 	}
 	defer db.Close()
 
-	dropOwnedSQL := fmt.Sprintf("DROP OWNED BY %s", safePgUserName)
+	dropOwnedSQL := fmt.Sprintf("DROP OWNED BY %s", pq.QuoteIdentifier(safePgUserName))
 	if _, err := db.Exec(dropOwnedSQL); err != nil {
 		log.Printf("Warning: could not drop objects owned by %s: %v", safePgUserName, err)
 	}
 
 	// Revoke roles from the user
-	revokeReadRoleSQL := fmt.Sprintf("REVOKE %s_read FROM %s", targetDbName, safePgUserName)
+	revokeReadRoleSQL := fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(targetDbName + "_read"), pq.QuoteIdentifier(safePgUserName))
 	if _, err := db.Exec(revokeReadRoleSQL); err != nil {
 		log.Printf("Warning: failed to revoke read role from user %s: %v", safePgUserName, err)
 	}
-	revokeWriteRoleSQL := fmt.Sprintf("REVOKE %s_write FROM %s", targetDbName, safePgUserName)
+	revokeWriteRoleSQL := fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(targetDbName + "_write"), pq.QuoteIdentifier(safePgUserName))
 	if _, err := db.Exec(revokeWriteRoleSQL); err != nil {
 		log.Printf("Warning: failed to revoke write role from user %s: %v", safePgUserName, err)
 	}
 
 	// Finally, drop the user.
-	dropUserSQL := fmt.Sprintf("DROP USER IF EXISTS %s", safePgUserName)
+	dropUserSQL := fmt.Sprintf("DROP USER IF EXISTS %s", pq.QuoteIdentifier(safePgUserName))
 	if _, err := db.Exec(dropUserSQL); err != nil {
 		return fmt.Errorf("failed to drop user %s: %w", safePgUserName, err)
 	}
@@ -532,12 +532,12 @@ func SoftDeletePostgresDatabase(pgAdminDSN, dbName string, pgUsers []models.Mana
 		if targetDB != nil {
 			log.Printf("Revoking roles for user %s on database %s", safeUsername, safeDBName)
 			// Revoke read role
-			revokeReadRoleSQL := fmt.Sprintf("REVOKE %s_read FROM %s", safeDBName, safeUsername)
+			revokeReadRoleSQL := fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(safeDBName + "_read"), pq.QuoteIdentifier(safeUsername))
 			if _, err := targetDB.Exec(revokeReadRoleSQL); err != nil {
 				log.Printf("Warning: Failed to revoke read role from user %s on %s: %v", safeUsername, safeDBName, err)
 			}
 			// Revoke write role
-			revokeWriteRoleSQL := fmt.Sprintf("REVOKE %s_write FROM %s", safeDBName, safeUsername)
+			revokeWriteRoleSQL := fmt.Sprintf("REVOKE %s FROM %s", pq.QuoteIdentifier(safeDBName + "_write"), pq.QuoteIdentifier(safeUsername))
 			if _, err := targetDB.Exec(revokeWriteRoleSQL); err != nil {
 				log.Printf("Warning: Failed to revoke write role from user %s on %s: %v", safeUsername, safeDBName, err)
 			}
@@ -545,7 +545,7 @@ func SoftDeletePostgresDatabase(pgAdminDSN, dbName string, pgUsers []models.Mana
 
 		// REVOKE CONNECT must be run from a different database (adminDB)
 		log.Printf("Revoking CONNECT privilege for user %s on database %s", safeUsername, safeDBName)
-		if _, err := adminDB.Exec(fmt.Sprintf("REVOKE CONNECT ON DATABASE %s FROM %s", safeDBName, safeUsername)); err != nil {
+		if _, err := adminDB.Exec(fmt.Sprintf("REVOKE CONNECT ON DATABASE %s FROM %s", pq.QuoteIdentifier(safeDBName), pq.QuoteIdentifier(safeUsername))); err != nil {
 			log.Printf("Warning: Failed to revoke connect for user %s on %s: %v", safeUsername, safeDBName, err)
 		}
 	}
