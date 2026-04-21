@@ -221,15 +221,6 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 		log.Printf("Warning: failed to revoke CREATE on public schema from PUBLIC: %v", err)
 	}
 
-	// Revoke CONNECT and re-grant only USAGE (CREATE is only for extensions, granted via PUBLIC temporarily).
-	// Read note above about why CREATE is not granted to PUBLIC here.
-	if _, err := newDB.Exec(fmt.Sprintf("REVOKE CONNECT ON DATABASE %s FROM PUBLIC", pq.QuoteIdentifier(safeDBName))); err != nil {
-		return fmt.Errorf("failed to revoke CONNECT on database from PUBLIC: %w", err)
-	}
-	if _, err := newDB.Exec("GRANT USAGE ON SCHEMA public TO PUBLIC"); err != nil {
-		return fmt.Errorf("failed to grant USAGE on public schema to PUBLIC: %w", err)
-	}
-
 	// Create read and write roles for the database
 	readRole := fmt.Sprintf("%s_read", safeDBName)
 	writeRole := fmt.Sprintf("%s_write", safeDBName)
