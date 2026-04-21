@@ -194,13 +194,6 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 	}
 	log.Printf("vector extension created successfully in %s.", safeDBName)
 
-	// Revoke CREATE from PUBLIC - we only grant it to enable extensions.
-	// Extensions are created by the admin user, not regular users.
-	// The write role already has CREATE via line 260.
-	if _, err := newDB.Exec("REVOKE CREATE ON SCHEMA public FROM PUBLIC"); err != nil {
-		log.Printf("Warning: failed to revoke CREATE on public schema from PUBLIC: %v", err)
-	}
-
 	// Create other allowed extensions from environment variable
 	allowedExtensionsStr := os.Getenv("PGWEB_ALLOWED_EXTENSIONS")
 	if allowedExtensionsStr != "" {
@@ -219,6 +212,13 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 				log.Printf("Extension %s created successfully in %s.", ext, safeDBName)
 			}
 		}
+	}
+
+	// Revoke CREATE from PUBLIC after all extensions are created.
+	// We only grant CREATE to PUBLIC temporarily for extension creation (line 163).
+	// The write role already has CREATE directly via line 263.
+	if _, err := newDB.Exec("REVOKE CREATE ON SCHEMA public FROM PUBLIC"); err != nil {
+		log.Printf("Warning: failed to revoke CREATE on public schema from PUBLIC: %v", err)
 	}
 
 	// Revoke CONNECT and re-grant only USAGE (CREATE is only for extensions, granted via PUBLIC temporarily).
