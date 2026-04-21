@@ -6,6 +6,10 @@ FROM node:22-alpine AS builder
 # Set the working directory
 WORKDIR /app
 
+# Get git commit hash for build info
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
 # Copy package files and install dependencies
 COPY package*.json ./
 RUN npm install
@@ -13,7 +17,9 @@ RUN npm install
 # Copy the rest of the application code
 COPY . .
 
-# Build the application
+# Build the application with build info
+ENV NEXT_PUBLIC_GIT_COMMIT=${GIT_COMMIT}
+ENV NEXT_PUBLIC_BUILD_DATE=${BUILD_DATE}
 RUN npm run build
 
 # Stage 2: Create the production image
