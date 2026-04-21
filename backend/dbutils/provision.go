@@ -216,7 +216,7 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 
 	// Revoke CREATE from PUBLIC after all extensions are created.
 	// We only grant CREATE to PUBLIC temporarily for extension creation (line 163).
-	// The write role already has CREATE directly via line 263.
+	// The write role will get CREATE directly via line 270.
 	if _, err := newDB.Exec("REVOKE CREATE ON SCHEMA public FROM PUBLIC"); err != nil {
 		log.Printf("Warning: failed to revoke CREATE on public schema from PUBLIC: %v", err)
 	}
