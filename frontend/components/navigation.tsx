@@ -3,10 +3,11 @@
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
-import { Database, User } from "lucide-react"
+import { Database, User, GitCommit, Calendar } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { getUserEmail } from "@/lib/api"
+import { BUILD_INFO } from "@/lib/build-info"
 
 export function Navigation() {
   const pathname = usePathname()
@@ -65,6 +66,13 @@ export function Navigation() {
           </div>
 
           <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <GitCommit className="h-3 w-3" title="Commit" />
+              <span className="font-mono">{BUILD_INFO.commit.substring(0, 7)}</span>
+              <span className="text-muted">|</span>
+              <Calendar className="h-3 w-3" title="Build Date" />
+              <span>{new Date(BUILD_INFO.buildDate).toLocaleDateString()}</span>
+            </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <User className="h-4 w-4" />
               {userEmail}
