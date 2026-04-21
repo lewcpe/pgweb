@@ -157,6 +157,9 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 	if _, err := newDB.Exec(fmt.Sprintf("REVOKE CONNECT ON DATABASE %s FROM PUBLIC", pq.QuoteIdentifier(safeDBName))); err != nil {
 		return fmt.Errorf("failed to revoke CONNECT on database from PUBLIC: %w", err)
 	}
+	// GRANT USAGE, CREATE ON SCHEMA public TO PUBLIC is needed for extensions created by admin.
+	// The CREATE permission is only for extension creation, not for regular users.
+	// After extensions are created, we revoke CREATE from PUBLIC (see below).
 	if _, err := newDB.Exec("GRANT USAGE, CREATE ON SCHEMA public TO PUBLIC"); err != nil {
 		return fmt.Errorf("failed to grant USAGE, CREATE on public schema to PUBLIC: %w", err)
 	}
@@ -191,6 +194,13 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 	}
 	log.Printf("vector extension created successfully in %s.", safeDBName)
 
+	// Revoke CREATE from PUBLIC - we only grant it to enable extensions.
+	// Extensions are created by the admin user, not regular users.
+	// The write role already has CREATE via line 260.
+	if _, err := newDB.Exec("REVOKE CREATE ON SCHEMA public FROM PUBLIC"); err != nil {
+		log.Printf("Warning: failed to revoke CREATE on public schema from PUBLIC: %v", err)
+	}
+
 	// Create other allowed extensions from environment variable
 	allowedExtensionsStr := os.Getenv("PGWEB_ALLOWED_EXTENSIONS")
 	if allowedExtensionsStr != "" {
@@ -211,16 +221,16 @@ func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
 		}
 	}
 
-	// Harden the database by revoking default privileges from PUBLIC, as per PGDOC.md.
-	log.Printf("Revoking default public access on database %s", safeDBName)
+	// Revoke CONNECT and re-grant only USAGE (CREATE is only for extensions, granted via PUBLIC temporarily).
+	// Read note above about why CREATE is not granted to PUBLIC here.
 	if _, err := newDB.Exec(fmt.Sprintf("REVOKE CONNECT ON DATABASE %s FROM PUBLIC", pq.QuoteIdentifier(safeDBName))); err != nil {
 		return fmt.Errorf("failed to revoke CONNECT on database from PUBLIC: %w", err)
 	}
-	if _, err := newDB.Exec("GRANT USAGE, CREATE ON SCHEMA public TO PUBLIC"); err != nil {
-		return fmt.Errorf("failed to grant USAGE, CREATE on public schema to PUBLIC: %w", err)
+	if _, err := newDB.Exec("GRANT USAGE ON SCHEMA public TO PUBLIC"); err != nil {
+		return fmt.Errorf("failed to grant USAGE on public schema to PUBLIC: %w", err)
 	}
 
-	// New: Create read and write roles for the database
+	// Create read and write roles for the database
 	readRole := fmt.Sprintf("%s_read", safeDBName)
 	writeRole := fmt.Sprintf("%s_write", safeDBName)
 
