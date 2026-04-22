@@ -1,11 +1,11 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg16 # Or your preferred PostgreSQL version with pgvector
+    image: pgvector/pgvector:pg16
     container_name: pgweb_postgres
     environment:
-      POSTGRES_USER: admin_user # Admin user for the instance
+      POSTGRES_USER: admin_user
       POSTGRES_PASSWORD: admin_password
-      POSTGRES_DB: admin_db # Initial admin database
+      POSTGRES_DB: admin_db
     ports:
       - "5432:5432"
     volumes:
@@ -16,55 +16,31 @@ services:
     image: ghcr.io/dexidp/dex:latest-distroless
     container_name: pgweb_dex
     ports:
-      - "5556:5556" # HTTP
-      - "5557:5557" # gRPC
-      - "5558:5558" # Metrics
+      - "5556:5556"
+      - "5557:5557"
+      - "5558:5558"
     volumes:
       - ./dex_config.yml:/etc/dex/config.docker.yaml:ro
     restart: unless-stopped
 
-  backend:
+  app:
     build:
-      context: ./backend # Assuming backend code is in a 'backend' subdirectory
+      context: .
       dockerfile: Dockerfile
-    container_name: pgweb_backend
+    container_name: pgweb_app
     ports:
       - "8080:8080"
     environment:
-      # For connecting to PostgreSQL as admin to manage databases/users
       PG_ADMIN_DSN: "postgres://admin_user:admin_password@postgres:5432/admin_db?sslmode=disable"
-      # For connecting to the application's own metadata tables (if separate or different user)
-      # APP_DB_DSN: "postgres://app_user:app_password@postgres:5432/app_metadata_db?sslmode=disable"
-      PGWEB_TRUSTED_HEADER: "X-Forwarded-Email"
-      GIN_MODE: "debug" # or "release"
       APP_DB_DSN: "postgres://admin_user:admin_password@postgres:5432/admin_db?sslmode=disable"
+      PGWEB_TRUSTED_HEADER: "X-Forwarded-Email"
+      GIN_MODE: "debug"
       SESSION_SECRET_KEY: "local-session-secret"
+      FRONTEND_DIST: "/app/frontend/dist"
     depends_on:
       - postgres
       - dex
     restart: unless-stopped
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: pgweb_frontend
-    environment:
-      - NEXT_PUBLIC_API_BASE_URL=http://localhost/api
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  nginx:
-    image: nginx:latest
-    container_name: pgweb_dev_nginx
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx.dev.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - backend
-      - frontend
 
 volumes:
   pgweb_data:
