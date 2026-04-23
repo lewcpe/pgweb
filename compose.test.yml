@@ -52,3 +52,20 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  playwright-tests:
+    profiles:
+      - e2e-tests
+    container_name: pgweb_test_playwright
+    build:
+      context: .
+      dockerfile: Dockerfile.playwright
+    environment:
+      CYPRESS_BASE_URL: "http://app:8080"
+    depends_on:
+      app:
+        condition: service_healthy
+    network_mode: service:app
+    volumes:
+      - ./tests/playwright:/e2e/tests/playwright
+      - ./frontend:/e2e/frontend
