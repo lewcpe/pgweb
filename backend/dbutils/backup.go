@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,35 +13,22 @@ import (
 	"time"
 )
 
-// buildDSNWithDB appends the database name to the DSN connection string.
-// Input DSN: "postgres://user:pass@host:port/defaultdb?sslmode=disable"
-// Output:    "postgres://user:pass@host:port/dbname?sslmode=disable"
+// buildDSNWithDB replaces the database name in a postgres DSN URL.
+// Input: "postgres://user:pass@host:port/olddb?sslmode=disable"
+// Output: "postgres://user:pass@host:port/newdb?sslmode=disable"
 func buildDSNWithDB(adminDSN string, dbName string) string {
-	// Parse and replace the database name in the DSN
-	// The DSN looks like: postgres://user:pass@host:port/olddb?params
-	// We need to replace the database portion
-	idx := strings.Index(adminDSN, "://")
-	if idx == -1 {
+	if !strings.HasPrefix(adminDSN, "postgres://") && !strings.HasPrefix(adminDSN, "postgresql://") {
 		return adminDSN + " dbname=" + dbName
 	}
-	scheme := adminDSN[:idx+3]
-	rest := adminDSN[idx+3:]
 
-	// Find the query string
-	queryIdx := strings.Index(rest, "?")
-	var query string
-	if queryIdx >= 0 {
-		query = rest[queryIdx:]
-		rest = rest[:queryIdx]
+	u, err := url.Parse(adminDSN)
+	if err != nil {
+		log.Printf("Warning: failed to parse DSN, falling back to manual construction: %v", err)
+		return adminDSN + " dbname=" + dbName
 	}
 
-	// Find the path (database name) - after the last /
-	slashIdx := strings.LastIndex(rest, "/")
-	if slashIdx >= 0 {
-		rest = rest[:slashIdx+1] + dbName
-	}
-
-	return scheme + rest + query
+	u.Path = "/" + dbName
+	return u.String()
 }
 
 // DumpDatabaseToFile runs pg_dump and writes the output to the specified file path.
