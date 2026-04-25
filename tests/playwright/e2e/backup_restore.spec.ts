@@ -6,6 +6,7 @@ const authHeaders = { 'X-Forwarded-Email': AUTH_EMAIL };
 const PG_ADMIN_DSN = 'postgres://test_admin:test_password@localhost:5432';
 
 test.describe('Database Backup and Restore E2E', () => {
+  test.describe.configure({ mode: 'serial' });
   const timestamp = Date.now();
   const testDbName = `bkpdb_${timestamp}`;
   const pgUsername = `appuser_${timestamp}`;
