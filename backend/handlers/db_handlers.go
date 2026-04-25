@@ -13,6 +13,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -443,6 +444,14 @@ func DownloadBackupHandler(c *gin.Context) {
 	c.Header("Content-Disposition", "attachment; filename="+filename)
 	c.Header("Content-Length", fmt.Sprintf("%d", job.FileSize))
 	c.File(job.FilePath)
+
+	// Clean up backup file after a delay (allow time for re-downloads)
+	go func(path string) {
+		time.Sleep(1 * time.Hour)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: failed to clean up backup file %s: %v", path, err)
+		}
+	}(job.FilePath)
 }
 
 // InitiateRestoreHandler accepts a dump file upload and starts an async restore job.
@@ -552,6 +561,13 @@ func InitiateRestoreHandler(c *gin.Context) {
 
 	// Run pg_restore in background
 	go func(jobID uuid.UUID, dbName string, uploadPath string) {
+		// Clean up upload file when done
+		defer func() {
+			if err := os.Remove(uploadPath); err != nil && !os.IsNotExist(err) {
+				log.Printf("Warning: failed to clean up restore upload %s: %v", uploadPath, err)
+			}
+		}()
+
 		// Update status to in_progress
 		if err := store.UpdateBackupJobStatus(jobID, "in_progress", uploadPath, 0, ""); err != nil {
 			log.Printf("Error updating restore job %s status: %v", jobID, err)

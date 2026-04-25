@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"pgweb-backend/auth"
-	"pgweb-backend/handlers" // This will now implicitly include pg_user_handlers if they are in the same package.
+	"pgweb-backend/dbutils"
+	"pgweb-backend/handlers"
 	"pgweb-backend/store"
 
 	"github.com/gin-contrib/sessions"
@@ -57,6 +59,13 @@ func main() {
 	if err := store.CreateBackupJobsTable(appDbDsn); err != nil {
 		log.Fatalf("Failed to ensure backup_jobs table exists: %v", err)
 	}
+
+	// Clean up old dump files on startup (older than 24 hours)
+	backupDir := os.Getenv("BACKUP_DIR")
+	if backupDir == "" {
+		backupDir = "/tmp/pgweb-backups"
+	}
+	dbutils.CleanupOldDumpFiles(backupDir, 24*time.Hour)
 	// Consider defer store.AppDB.Close() for graceful shutdown
 
 	r := gin.Default()

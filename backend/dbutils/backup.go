@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"time"
 )
 
 // buildDSNWithDB appends the database name to the DSN connection string.
@@ -102,4 +105,44 @@ func RestoreDatabaseFromFile(adminDSN string, dbName string, filePath string) er
 	defer f.Close()
 
 	return RestoreDatabaseFromReader(adminDSN, dbName, f)
+}
+
+// CleanupOldDumpFiles removes dump files older than maxAge from the backup directory.
+// Called on server startup to clean up orphaned files from previous runs.
+func CleanupOldDumpFiles(backupDir string, maxAge time.Duration) {
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return
+		}
+		log.Printf("Warning: failed to read backup directory %s: %v", backupDir, err)
+		return
+	}
+
+	cutoff := time.Now().Add(-maxAge)
+	removed := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".dump") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().Before(cutoff) {
+			path := filepath.Join(backupDir, name)
+			if err := os.Remove(path); err != nil {
+				log.Printf("Warning: failed to remove old dump file %s: %v", path, err)
+			} else {
+				removed++
+			}
+		}
+	}
+	if removed > 0 {
+		log.Printf("Cleaned up %d old dump file(s) from %s", removed, backupDir)
+	}
 }
