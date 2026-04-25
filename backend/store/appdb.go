@@ -638,3 +638,31 @@ func GetLatestBackupJobForDatabase(databaseID uuid.UUID, jobType string) (*model
 	}
 	return job, nil
 }
+
+// HasActiveJobForDatabase checks if there is any active (pending/in_progress) job for a database,
+// regardless of type (backup or restore). Returns the active job if found.
+func HasActiveJobForDatabase(databaseID uuid.UUID) (*models.BackupJob, bool, error) {
+	if AppDB == nil {
+		return nil, false, errors.New("database not initialized")
+	}
+	query := `SELECT backup_job_id, database_id, type, status, file_path, file_size, error_message, created_at, completed_at
+	           FROM backup_jobs WHERE database_id = $1 AND status IN ('pending', 'in_progress') ORDER BY created_at DESC LIMIT 1`
+	job := &models.BackupJob{}
+	var completedAt sql.NullTime
+	var filePath, errorMessage string
+	err := AppDB.QueryRow(query, databaseID).Scan(
+		&job.BackupJobID, &job.DatabaseID, &job.Type, &job.Status, &filePath, &job.FileSize, &errorMessage, &job.CreatedAt, &completedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("error checking active jobs for database %s: %w", databaseID, err)
+	}
+	job.FilePath = filePath
+	job.ErrorMessage = errorMessage
+	if completedAt.Valid {
+		job.CompletedAt = &completedAt.Time
+	}
+	return job, true, nil
+}

@@ -136,6 +136,19 @@ test.describe('Database Backup and Restore E2E', () => {
     expect(response.status()).toBe(409);
   });
 
+  test('should reject restore while backup is in progress', async ({ request }) => {
+    const response = await request.post(`/api/databases/${testDbId}/restore`, {
+      headers: {
+        ...authHeaders,
+        'Content-Type': 'application/octet-stream',
+      },
+      data: Buffer.from('fake-dump-data'),
+    });
+    expect(response.status()).toBe(409);
+    const body = await response.json();
+    expect(body.error).toContain('backup');
+  });
+
   test('should poll backup status until completed', async ({ request }) => {
     test.setTimeout(120_000);
 
@@ -199,6 +212,14 @@ test.describe('Database Backup and Restore E2E', () => {
     expect(job).toHaveProperty('backup_job_id');
     expect(job.type).toBe('restore');
     expect(['pending', 'in_progress']).toContain(job.status);
+
+    // Reject backup while restore is in progress
+    const backupWhileRestore = await request.post(`/api/databases/${testDbId}/backup`, {
+      headers: authHeaders,
+    });
+    expect(backupWhileRestore.status()).toBe(409);
+    const conflictBody = await backupWhileRestore.json();
+    expect(conflictBody.error).toContain('restore');
 
     // Poll until restore completes
     let status = job.status;

@@ -300,10 +300,13 @@ func InitiateBackupHandler(c *gin.Context) {
 		return
 	}
 
-	// Check if there's already a pending/running backup job
-	latestJob, err := store.GetLatestBackupJobForDatabase(databaseID, "backup")
-	if err == nil && (latestJob.Status == "pending" || latestJob.Status == "in_progress") {
-		c.JSON(http.StatusConflict, gin.H{"error": "A backup is already in progress", "backup_job": latestJob})
+	// Check if there's already any active job (backup or restore) for this database
+	if activeJob, found, err := store.HasActiveJobForDatabase(databaseID); err != nil {
+		log.Printf("Error checking active jobs for database %s: %v", databaseID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check for active jobs"})
+		return
+	} else if found {
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("A %s job is already in progress", activeJob.Type), "job": activeJob})
 		return
 	}
 
@@ -473,10 +476,13 @@ func InitiateRestoreHandler(c *gin.Context) {
 		return
 	}
 
-	// Check if there's already a pending/running restore job
-	latestJob, err := store.GetLatestBackupJobForDatabase(databaseID, "restore")
-	if err == nil && (latestJob.Status == "pending" || latestJob.Status == "in_progress") {
-		c.JSON(http.StatusConflict, gin.H{"error": "A restore is already in progress", "restore_job": latestJob})
+	// Check if there's already any active job (backup or restore) for this database
+	if activeJob, found, err := store.HasActiveJobForDatabase(databaseID); err != nil {
+		log.Printf("Error checking active jobs for database %s: %v", databaseID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check for active jobs"})
+		return
+	} else if found {
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("A %s job is already in progress", activeJob.Type), "job": activeJob})
 		return
 	}
 
