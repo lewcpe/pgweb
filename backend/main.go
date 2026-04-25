@@ -4,6 +4,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"pgweb-backend/auth"
 	"pgweb-backend/handlers" // This will now implicitly include pg_user_handlers if they are in the same package.
@@ -73,12 +75,44 @@ func main() {
 	})
 	r.Use(sessions.Sessions(sessionName, cookieStore))
 
-	// Simple Hello World route
-	r.GET("/", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Hello World!",
+	// Serve static files from frontend dist
+	frontendDist := os.Getenv("FRONTEND_DIST")
+	if frontendDist == "" {
+		frontendDist = "./frontend/dist"
+	}
+
+	// Check if frontend dist exists
+	if _, err := os.Stat(frontendDist); err == nil {
+		log.Printf("Serving frontend from: %s", frontendDist)
+
+		// Serve static files
+		r.Static("/assets", filepath.Join(frontendDist, "assets"))
+
+		// Serve index.html for root
+		r.GET("/", func(c *gin.Context) {
+			c.File(filepath.Join(frontendDist, "index.html"))
 		})
-	})
+
+		// Catch-all for SPA routing - serve index.html for non-API routes
+		r.NoRoute(func(c *gin.Context) {
+			// Don't interfere with API routes
+			if strings.HasPrefix(c.Request.URL.Path, "/api") ||
+				strings.HasPrefix(c.Request.URL.Path, "/auth") ||
+				strings.HasPrefix(c.Request.URL.Path, "/health") {
+				c.Status(http.StatusNotFound)
+				return
+			}
+			c.File(filepath.Join(frontendDist, "index.html"))
+		})
+	} else {
+		// No frontend dist found, serve simple hello
+		log.Printf("Warning: Frontend dist not found at %s, serving API only", frontendDist)
+		r.GET("/", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"message": "pgweb API",
+			})
+		})
+	}
 
 	// Authentication routes (generally do not need auth middleware themselves)
 	authGroup := r.Group("/auth")

@@ -14,18 +14,19 @@ services:
       timeout: 5s
       retries: 10
 
-  backend:
-    image: ${BACKEND_IMAGE:-pgweb/pgweb-backend-test}
+  app:
+    image: ${APP_IMAGE:-pgweb-test}
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
-    container_name: pgweb_test_backend
+    container_name: pgweb_test_app
     environment:
       PG_ADMIN_DSN: "postgres://test_admin:test_password@postgres:5432/test_admin_db?sslmode=disable"
       APP_DB_DSN: "postgres://test_admin:test_password@postgres:5432/test_admin_db?sslmode=disable"
       GIN_MODE: "release"
       SESSION_SECRET_KEY: "test-session-secret"
-      PGWEB_TRUSTED_HEADER: "X-Forwarded-Email" # Add this line
+      PGWEB_TRUSTED_HEADER: "X-Forwarded-Email"
+      FRONTEND_DIST: "/app/frontend/dist"
     ports:
       - "8080:8080"
     depends_on:
@@ -38,29 +39,6 @@ services:
       retries: 10
       start_period: 10s
 
- 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: pgweb_frontend
-    environment:
-      - NEXT_PUBLIC_API_BASE_URL=http://localhost/api
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  nginx:
-    image: nginx:latest
-    container_name: pgweb_dev_nginx
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx.dev.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - backend
-      - frontend
-
   backend-tests:
     profiles:
       - backend-tests
@@ -72,19 +50,22 @@ services:
       PG_ADMIN_DSN: "postgres://test_admin:test_password@postgres:5432/test_admin_db?sslmode=disable"
       PG_HOST: "postgres"
     depends_on:
-      - backend
+      postgres:
+        condition: service_healthy
 
-  cypress:
-    image: cypress/included:12.17.0
-    container_name: pgweb_test_cypress
+  playwright-tests:
+    profiles:
+      - e2e-tests
+    container_name: pgweb_test_playwright
+    build:
+      context: .
+      dockerfile: Dockerfile.playwright
     environment:
-      CYPRESS_BASE_URL: "http://nginx"
-    working_dir: /e2e
-    volumes:
-      - ./tests/:/e2e
+      CYPRESS_BASE_URL: "http://app:8080"
     depends_on:
-      frontend:
-        condition: service_started
-    command: --config-file cypress.config.js
-
-    
+      app:
+        condition: service_healthy
+    network_mode: service:app
+    volumes:
+      - ./tests/playwright:/e2e/tests/playwright
+      - ./frontend:/e2e/frontend
