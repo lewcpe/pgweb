@@ -3,7 +3,6 @@ name: CI Pipeline
 permissions:
   contents: read
   packages: write
-  dependency-graph: none
 
 on:
   push:
