@@ -144,7 +144,7 @@ export function DashboardPage() {
                         {getStatusText(database.status)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{database.owner_user_id}</TableCell>
+                    <TableCell className="text-muted-foreground">{database.owner_email}</TableCell>
                     <TableCell>
                       <div className="flex items-center text-sm text-muted-foreground">
                         <Calendar className="h-4 w-4 mr-2" />

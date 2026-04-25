@@ -53,6 +53,10 @@ func main() {
 	if err := store.CreateManagedPgUsersTable(appDbDsn); err != nil {
 		log.Fatalf("Failed to ensure managed_pg_users table exists: %v", err)
 	}
+	// Ensure backup_jobs table exists
+	if err := store.CreateBackupJobsTable(appDbDsn); err != nil {
+		log.Fatalf("Failed to ensure backup_jobs table exists: %v", err)
+	}
 	// Consider defer store.AppDB.Close() for graceful shutdown
 
 	r := gin.Default()
@@ -140,6 +144,10 @@ func main() {
 			databasesGroup.GET("", handlers.ListDatabasesHandler)
 			databasesGroup.GET("/:database_id", handlers.GetDatabaseHandler)
 			databasesGroup.DELETE("/:database_id", handlers.DeleteDatabaseHandler)
+			databasesGroup.POST("/:database_id/backup", handlers.InitiateBackupHandler)
+			databasesGroup.GET("/:database_id/backup/:job_id", handlers.BackupStatusHandler)
+			databasesGroup.GET("/:database_id/backup/:job_id/download", handlers.DownloadBackupHandler)
+			databasesGroup.POST("/:database_id/restore", handlers.RestoreDatabaseHandler)
 
 			// PG User management within a database
 			pgUserRoutes := databasesGroup.Group("/:database_id/pgusers")

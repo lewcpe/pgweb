@@ -406,6 +406,19 @@ func CreatePostgresUser(pgAdminDSN, targetDbName, pgUserName, permissionLevel st
 	}
 	log.Printf("Role %s granted to user %s.", roleName, safePgUserName)
 
+	// Grant schema-level permissions directly to the user so they can create objects
+	// even before their default role takes effect on connection.
+	_, err = db.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA public TO %s", pq.QuoteIdentifier(safePgUserName)))
+	if err != nil {
+		log.Printf("Warning: failed to grant USAGE on public schema to user %s: %v", safePgUserName, err)
+	}
+	if permissionLevel == "write" {
+		_, err = db.Exec(fmt.Sprintf("GRANT CREATE ON SCHEMA public TO %s", pq.QuoteIdentifier(safePgUserName)))
+		if err != nil {
+			log.Printf("Warning: failed to grant CREATE on public schema to user %s: %v", safePgUserName, err)
+		}
+	}
+
 	// For write users, set their default role to the writeRole.
 	// This ensures that objects they create are owned by the writeRole, not the user.
 	if permissionLevel == "write" {
