@@ -162,3 +162,15 @@ jobs:
         env:
           CYPRESS_BASE_URL: "http://app:8080"
         run: docker compose -f compose.test.yml run --rm playwright-tests
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: |
+          echo "===== app logs ====="
+          docker compose -f compose.test.yml logs app || true
+          echo "===== postgres logs ====="
+          docker compose -f compose.test.yml logs postgres || true
+          echo "===== ps ====="
+          docker compose -f compose.test.yml ps || true
+          echo "===== app inspect ====="
+          docker inspect pgweb_test_app --format '{{json .State}}' || true
