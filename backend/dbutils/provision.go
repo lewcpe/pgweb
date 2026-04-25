@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"pgweb-backend/models" // To use models.ManagedPGUser
@@ -21,6 +22,11 @@ var (
 	// Character set for password generation
 	passwordChars  = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
 	passwordLength = 16
+	// PostgreSQL serializes CREATE DATABASE through template1; concurrent calls
+	// can fail with "source database template1 is being accessed by other users".
+	// Serialize in-process so a single app instance never issues two concurrent
+	// CREATE DATABASE statements.
+	createDatabaseMu sync.Mutex
 )
 
 // sanitizeIdentifier validates a string to be a safe PostgreSQL identifier.
@@ -102,6 +108,9 @@ func getSpecificDatabaseDSN(generalDSN, dbName string) string {
 
 // CreatePostgresDatabase creates a new database and enables pgvector extension.
 func CreatePostgresDatabase(pgAdminDSN, dbName string) error {
+	createDatabaseMu.Lock()
+	defer createDatabaseMu.Unlock()
+
 	log.Printf("Attempting to create database: %s", dbName)
 	safeDBName, err := sanitizeIdentifier(dbName)
 	if err != nil {
