@@ -11,9 +11,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -102,12 +102,17 @@ func CreateDatabaseHandler(c *gin.Context) {
 
 	if err := store.CreateManagedDatabase(managedDB); err != nil {
 		log.Printf("Error creating ManagedDatabase record for %s: %v", pgDatabaseName, err)
-		// TODO: Consider cleanup if DB was provisioned but record creation failed (e.g. drop provisioned DB)
+		// Compensating action: drop the provisioned PG database since the record failed
+		log.Printf("Compensating: dropping provisioned database %s due to record creation failure", pgDatabaseName)
+		if dropErr := dbutils.SoftDeletePostgresDatabase(pgAdminDSN, pgDatabaseName, nil); dropErr != nil {
+			log.Printf("Warning: failed to clean up provisioned database %s: %v", pgDatabaseName, dropErr)
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save database record"})
 		return
 	}
 
 	log.Printf("Database %s created and record saved for user %s", managedDB.PGDatabaseName, currentUser.InternalUserID)
+	store.WriteAuditLog(&currentUser.InternalUserID, "database.create", "database", managedDB.DatabaseID.String(), map[string]string{"pg_database_name": pgDatabaseName})
 	c.JSON(http.StatusCreated, managedDB)
 }
 
@@ -267,6 +272,7 @@ func DeleteDatabaseHandler(c *gin.Context) {
 	}
 
 	log.Printf("Database %s (ID: %s) soft-deleted by user %s", managedDB.PGDatabaseName, databaseID, currentUser.InternalUserID)
+	store.WriteAuditLog(&currentUser.InternalUserID, "database.delete", "database", databaseID.String(), map[string]string{"pg_database_name": managedDB.PGDatabaseName})
 	c.JSON(http.StatusOK, gin.H{"message": "Database soft-deleted successfully", "database": managedDB})
 }
 
@@ -401,6 +407,12 @@ func BackupStatusHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, job)
 }
 
+// sanitizeFilename removes any character not in [A-Za-z0-9._-] from the filename.
+func sanitizeFilename(name string) string {
+	reg := regexp.MustCompile(`[^A-Za-z0-9._-]`)
+	return reg.ReplaceAllString(name, "_")
+}
+
 // DownloadBackupHandler serves the dump file for a completed backup job.
 func DownloadBackupHandler(c *gin.Context) {
 	currentUser := auth.GetUserFromSession(c)
@@ -432,6 +444,29 @@ func DownloadBackupHandler(c *gin.Context) {
 		return
 	}
 
+	// Validate that the file path is rooted under the configured backup directory
+	backupDir := os.Getenv("BACKUP_DIR")
+	if backupDir == "" {
+		backupDir = "/tmp/pgweb-backups"
+	}
+	absBackupDir, err := filepath.Abs(backupDir)
+	if err != nil {
+		log.Printf("Error resolving backup directory %s: %v", backupDir, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to resolve backup directory"})
+		return
+	}
+	absFilePath, err := filepath.Abs(filepath.Clean(job.FilePath))
+	if err != nil {
+		log.Printf("Error resolving file path %s: %v", job.FilePath, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to resolve file path"})
+		return
+	}
+	if !strings.HasPrefix(absFilePath, absBackupDir+string(os.PathSeparator)) && absFilePath != absBackupDir {
+		log.Printf("Security: file path %s is outside backup directory %s", job.FilePath, absBackupDir)
+		c.JSON(http.StatusForbidden, gin.H{"error": "File access denied"})
+		return
+	}
+
 	// Get the database name for the filename
 	managedDB, err := store.GetManagedDatabaseByID(job.DatabaseID, currentUser.InternalUserID)
 	if err != nil {
@@ -440,18 +475,11 @@ func DownloadBackupHandler(c *gin.Context) {
 		return
 	}
 
-	filename := managedDB.PGDatabaseName + ".dump"
-	c.Header("Content-Disposition", "attachment; filename="+filename)
+	// Sanitize and quote the filename for Content-Disposition
+	filename := sanitizeFilename(managedDB.PGDatabaseName) + ".dump"
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	c.Header("Content-Length", fmt.Sprintf("%d", job.FileSize))
-	c.File(job.FilePath)
-
-	// Clean up backup file after a delay (allow time for re-downloads)
-	go func(path string) {
-		time.Sleep(1 * time.Hour)
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			log.Printf("Warning: failed to clean up backup file %s: %v", path, err)
-		}
-	}(job.FilePath)
+	c.File(absFilePath)
 }
 
 // InitiateRestoreHandler accepts a dump file upload and starts an async restore job.

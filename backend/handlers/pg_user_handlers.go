@@ -127,12 +127,17 @@ func CreatePGUserHandler(c *gin.Context) {
 
 	if err := store.CreateManagedPGUser(managedPGUser); err != nil {
 		log.Printf("Error creating ManagedPGUser record for %s in DB %s: %v", pgUsername, databaseID, err)
-		// TODO: Consider cleanup if PG user was provisioned but record creation failed
+		// Compensating action: delete the provisioned PG user since the record failed
+		log.Printf("Compensating: deleting provisioned PG user %s due to record creation failure", pgUsername)
+		if delErr := dbutils.DeletePostgresUser(pgAdminDSN, managedDB.PGDatabaseName, pgUsername); delErr != nil {
+			log.Printf("Warning: failed to clean up provisioned PG user %s: %v", pgUsername, delErr)
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save PostgreSQL user record"})
 		return
 	}
 
 	log.Printf("PG User %s created for DB %s (ID: %s) by user %s", pgUsername, managedDB.PGDatabaseName, databaseID, currentUser.InternalUserID)
+	store.WriteAuditLog(&currentUser.InternalUserID, "pguser.create", "pg_user", managedPGUser.PGUserID.String(), map[string]string{"pg_username": pgUsername, "database_id": databaseID.String(), "permission_level": req.PermissionLevel})
 
 	response := PGUserResponse{
 		ManagedPGUser: *managedPGUser,
@@ -251,6 +256,7 @@ func RegeneratePGPasswordHandler(c *gin.Context) {
 	// e.g., store.UpdatePGUser(pgUser) if such a generic update function exists.
 
 	log.Printf("Password regenerated for PG User %s (ID: %s) in DB %s by user %s", pgUser.PGUsername, pgUser.PGUserID, managedDB.PGDatabaseName, currentUser.InternalUserID)
+	store.WriteAuditLog(&currentUser.InternalUserID, "pguser.regenerate_password", "pg_user", pgUser.PGUserID.String(), map[string]string{"pg_username": pgUser.PGUsername, "database_id": managedDB.DatabaseID.String()})
 
 	response := RegeneratePasswordResponse{
 		NewPassword: newPassword,
@@ -329,5 +335,6 @@ func DeletePGUserHandler(c *gin.Context) {
 	}
 
 	log.Printf("PG User %s (ID: %s) in DB %s deleted by user %s", pgUser.PGUsername, pgUserID, managedDB.PGDatabaseName, currentUser.InternalUserID)
+	store.WriteAuditLog(&currentUser.InternalUserID, "pguser.delete", "pg_user", pgUserID.String(), map[string]string{"pg_username": pgUser.PGUsername, "database_id": managedDB.DatabaseID.String()})
 	c.JSON(http.StatusNoContent, nil)
 }

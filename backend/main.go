@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"pgweb-backend/auth"
@@ -39,7 +42,7 @@ func main() {
 	// Initialize trusted header authentication
 	auth.InitTrustedHeaderAuth()
 
-	// Initialize Application Database connection
+	// Initialize Application Database connection (runs all migrations)
 	appDbDsn := os.Getenv("APP_DB_DSN")
 	if appDbDsn == "" {
 		log.Fatalf("APP_DB_DSN environment variable is not set.")
@@ -47,18 +50,7 @@ func main() {
 	if err := store.InitAppDB(appDbDsn); err != nil {
 		log.Fatalf("Failed to initialize application database: %v", err)
 	}
-	// Ensure managed_databases table exists
-	if err := store.CreateManagedDatabasesTable(appDbDsn); err != nil {
-		log.Fatalf("Failed to ensure managed_databases table exists: %v", err)
-	}
-	// Ensure managed_pg_users table exists
-	if err := store.CreateManagedPgUsersTable(appDbDsn); err != nil {
-		log.Fatalf("Failed to ensure managed_pg_users table exists: %v", err)
-	}
-	// Ensure backup_jobs table exists
-	if err := store.CreateBackupJobsTable(appDbDsn); err != nil {
-		log.Fatalf("Failed to ensure backup_jobs table exists: %v", err)
-	}
+	defer store.AppDB.Close()
 
 	// Clean up old dump files on startup (older than 24 hours)
 	backupDir := os.Getenv("BACKUP_DIR")
@@ -66,7 +58,17 @@ func main() {
 		backupDir = "/tmp/pgweb-backups"
 	}
 	dbutils.CleanupOldDumpFiles(backupDir, 24*time.Hour)
-	// Consider defer store.AppDB.Close() for graceful shutdown
+
+	// Start periodic backup file janitor (replaces per-request goroutines)
+	janitorInterval := 30 * time.Minute
+	janitorTicker := time.NewTicker(janitorInterval)
+	defer janitorTicker.Stop()
+	go func() {
+		for range janitorTicker.C {
+			dbutils.CleanupOldDumpFiles(backupDir, 1*time.Hour)
+		}
+	}()
+	log.Printf("Backup file janitor started (interval: %s, max age: 1h)", janitorInterval)
 
 	r := gin.Default()
 
@@ -170,8 +172,32 @@ func main() {
 		}
 	}
 
-	log.Println("Starting server on :8080")
-	if err := r.Run(":8080"); err != nil {
-		log.Fatalf("Failed to run server: %v", err)
+	// Graceful shutdown with signal handling
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: r,
 	}
+
+	// Start server in a goroutine
+	go func() {
+		log.Println("Starting server on :8080")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to run server: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal for graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down server...")
+
+	// Give outstanding requests 10 seconds to complete
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Server exited gracefully")
 }

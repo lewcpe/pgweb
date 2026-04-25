@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"strconv"
 	"time"
 
 	"pgweb-backend/models" // Assuming 'backend' is the module name
@@ -26,58 +28,64 @@ func InitAppDB(dataSourceName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open database connection: %w", err)
 	}
-	AppDB.SetMaxOpenConns(25)
-	AppDB.SetMaxIdleConns(25)
-	AppDB.SetConnMaxLifetime(5 * time.Minute)
+
+	// Centralized pool tuning with env overrides
+	maxOpen := 25
+	maxIdle := 25
+	connLifetimeMin := 5
+	if v := os.Getenv("APP_DB_MAX_OPEN"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			maxOpen = n
+		}
+	}
+	if v := os.Getenv("APP_DB_MAX_IDLE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			maxIdle = n
+		}
+	}
+	if v := os.Getenv("APP_DB_CONN_MAX_LIFETIME_MINUTES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			connLifetimeMin = n
+		}
+	}
+	AppDB.SetMaxOpenConns(maxOpen)
+	AppDB.SetMaxIdleConns(maxIdle)
+	AppDB.SetConnMaxLifetime(time.Duration(connLifetimeMin) * time.Minute)
+
 	err = AppDB.Ping()
 	if err != nil {
 		AppDB.Close()
 		return fmt.Errorf("failed to ping database: %w", err)
 	}
 	log.Println("Successfully connected to the application database.")
-	// Ensure application_users table exists after successful connection
-	if err := CreateApplicationUsersTable(dataSourceName); err != nil {
-		return fmt.Errorf("failed to ensure application_users table exists: %w", err)
+
+	// Run all migrations using the existing pool
+	if err := RunMigrations(); err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 	return nil
 }
 
-// CreateApplicationUsersTable creates the application_users table if it doesn't exist.
-func CreateApplicationUsersTable(appDbDSN string) error {
-	log.Println("Attempting to create application_users table if not exists...")
-	db, err := sql.Open("postgres", appDbDSN)
-	if err != nil {
-		return fmt.Errorf("failed to open database connection to create users table: %w", err)
-	}
-	defer db.Close()
-
-	createTableSQL := `
+// RunMigrations creates all required tables and indexes using the existing AppDB pool.
+func RunMigrations() error {
+	migrations := []struct {
+		name string
+		sql  string
+	}{
+		{
+			name: "application_users",
+			sql: `
 CREATE TABLE IF NOT EXISTS application_users (
 	internal_user_id UUID PRIMARY KEY,
 	oidc_sub TEXT UNIQUE,
 	email TEXT UNIQUE NOT NULL,
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	updated_at TIMESTAMP WITH TIME ZONE NOT NULL
-);`
-
-	_, err = db.Exec(createTableSQL)
-	if err != nil {
-		return fmt.Errorf("failed to create application_users table: %w", err)
-	}
-	log.Println("application_users table ensured to exist.")
-	return nil
-}
-
-// CreateManagedDatabasesTable creates the managed_databases table if it doesn't exist.
-func CreateManagedDatabasesTable(appDbDSN string) error {
-	log.Println("Attempting to create managed_databases table if not exists...")
-	db, err := sql.Open("postgres", appDbDSN)
-	if err != nil {
-		return fmt.Errorf("failed to open database connection to create managed databases table: %w", err)
-	}
-	defer db.Close()
-
-	createTableSQL := `
+);`,
+		},
+		{
+			name: "managed_databases",
+			sql: `
 CREATE TABLE IF NOT EXISTS managed_databases (
 	database_id UUID PRIMARY KEY,
 	owner_user_id UUID NOT NULL,
@@ -85,26 +93,11 @@ CREATE TABLE IF NOT EXISTS managed_databases (
 	status TEXT NOT NULL,
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	updated_at TIMESTAMP WITH TIME ZONE NOT NULL
-);`
-
-	_, err = db.Exec(createTableSQL)
-	if err != nil {
-		return fmt.Errorf("failed to create managed_databases table: %w", err)
-	}
-	log.Println("managed_databases table ensured to exist.")
-	return nil
-}
-
-// CreateManagedPgUsersTable creates the managed_pg_users table if it doesn't exist.
-func CreateManagedPgUsersTable(appDbDSN string) error {
-	log.Println("Attempting to create managed_pg_users table if not exists...")
-	db, err := sql.Open("postgres", appDbDSN)
-	if err != nil {
-		return fmt.Errorf("failed to open database connection to create managed PG users table: %w", err)
-	}
-	defer db.Close()
-
-	createTableSQL := `
+);`,
+		},
+		{
+			name: "managed_pg_users",
+			sql: `
 CREATE TABLE IF NOT EXISTS managed_pg_users (
 	pg_user_id UUID PRIMARY KEY,
 	managed_database_id UUID NOT NULL,
@@ -118,13 +111,74 @@ CREATE TABLE IF NOT EXISTS managed_pg_users (
 		REFERENCES managed_databases(database_id)
 		ON DELETE CASCADE,
 	UNIQUE (managed_database_id, pg_username)
-);`
-
-	_, err = db.Exec(createTableSQL)
-	if err != nil {
-		return fmt.Errorf("failed to create managed_pg_users table: %w", err)
+);`,
+		},
+		{
+			name: "backup_jobs",
+			sql: `
+CREATE TABLE IF NOT EXISTS backup_jobs (
+	backup_job_id UUID PRIMARY KEY,
+	database_id UUID NOT NULL,
+	type TEXT NOT NULL DEFAULT 'backup',
+	status TEXT NOT NULL,
+	file_path TEXT NOT NULL DEFAULT '',
+	file_size BIGINT NOT NULL DEFAULT 0,
+	error_message TEXT NOT NULL DEFAULT '',
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	completed_at TIMESTAMP WITH TIME ZONE,
+	CONSTRAINT fk_managed_database
+		FOREIGN KEY(database_id)
+		REFERENCES managed_databases(database_id)
+		ON DELETE CASCADE
+);`,
+		},
+		{
+			name: "backup_jobs_type_column_migration",
+			sql: `ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'backup'`,
+		},
+		{
+			name: "idx_managed_databases_owner",
+			sql: `CREATE INDEX IF NOT EXISTS idx_managed_databases_owner ON managed_databases(owner_user_id)`,
+		},
+		{
+			name: "idx_backup_jobs_database_status",
+			sql: `CREATE INDEX IF NOT EXISTS idx_backup_jobs_database_status ON backup_jobs(database_id, status)`,
+		},
+		{
+			name: "idx_backup_jobs_database_type_created",
+			sql: `CREATE INDEX IF NOT EXISTS idx_backup_jobs_database_type_created ON backup_jobs(database_id, type, created_at DESC)`,
+		},
+		{
+			name: "audit_log",
+			sql: `
+CREATE TABLE IF NOT EXISTS audit_log (
+	audit_id UUID PRIMARY KEY,
+	actor_user_id UUID,
+	action TEXT NOT NULL,
+	target_type TEXT NOT NULL,
+	target_id TEXT,
+	payload JSONB,
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL
+);`,
+		},
+		{
+			name: "idx_audit_log_created",
+			sql: `CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC)`,
+		},
+		{
+			name: "idx_audit_log_actor",
+			sql: `CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON audit_log(actor_user_id)`,
+		},
 	}
-	log.Println("managed_pg_users table ensured to exist.")
+
+	for _, m := range migrations {
+		log.Printf("Running migration: %s", m.name)
+		if _, err := AppDB.Exec(m.sql); err != nil {
+			return fmt.Errorf("migration %s failed: %w", m.name, err)
+		}
+	}
+
+	log.Println("All migrations completed successfully.")
 	return nil
 }
 
@@ -481,44 +535,6 @@ func UpdateManagedPGUserStatusForDB(databaseID uuid.UUID, newStatus string) erro
 
 // --- BackupJob CRUD ---
 
-// CreateBackupJobsTable creates the backup_jobs table if it doesn't exist.
-func CreateBackupJobsTable(appDbDSN string) error {
-	log.Println("Attempting to create backup_jobs table if not exists...")
-	db, err := sql.Open("postgres", appDbDSN)
-	if err != nil {
-		return fmt.Errorf("failed to open database connection to create backup_jobs table: %w", err)
-	}
-	defer db.Close()
-
-	createTableSQL := `
-CREATE TABLE IF NOT EXISTS backup_jobs (
-	backup_job_id UUID PRIMARY KEY,
-	database_id UUID NOT NULL,
-	type TEXT NOT NULL DEFAULT 'backup',
-	status TEXT NOT NULL,
-	file_path TEXT NOT NULL DEFAULT '',
-	file_size BIGINT NOT NULL DEFAULT 0,
-	error_message TEXT NOT NULL DEFAULT '',
-	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-	completed_at TIMESTAMP WITH TIME ZONE,
-	CONSTRAINT fk_managed_database
-		FOREIGN KEY(database_id)
-		REFERENCES managed_databases(database_id)
-		ON DELETE CASCADE
-);`
-
-	_, err = db.Exec(createTableSQL)
-	if err != nil {
-		return fmt.Errorf("failed to create backup_jobs table: %w", err)
-	}
-
-	// Add type column if it doesn't exist (migration for existing tables)
-	_, _ = db.Exec("ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'backup'")
-
-	log.Println("backup_jobs table ensured to exist.")
-	return nil
-}
-
 // CreateBackupJob inserts a new backup job record.
 func CreateBackupJob(job *models.BackupJob) error {
 	if AppDB == nil {
@@ -547,24 +563,7 @@ func GetBackupJobByID(jobID uuid.UUID, ownerUserID uuid.UUID) (*models.BackupJob
 		FROM backup_jobs bj
 		JOIN managed_databases d ON bj.database_id = d.database_id
 		WHERE bj.backup_job_id = $1 AND d.owner_user_id = $2`
-	job := &models.BackupJob{}
-	var completedAt sql.NullTime
-	var filePath, errorMessage string
-	err := AppDB.QueryRow(query, jobID, ownerUserID).Scan(
-		&job.BackupJobID, &job.DatabaseID, &job.Type, &job.Status, &filePath, &job.FileSize, &errorMessage, &job.CreatedAt, &completedAt,
-	)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, sql.ErrNoRows
-		}
-		return nil, fmt.Errorf("error querying backup job %s: %w", jobID, err)
-	}
-	job.FilePath = filePath
-	job.ErrorMessage = errorMessage
-	if completedAt.Valid {
-		job.CompletedAt = &completedAt.Time
-	}
-	return job, nil
+	return scanBackupJob(AppDB.QueryRow(query, jobID, ownerUserID), jobID)
 }
 
 // GetBackupJobByIDInternal retrieves a backup job by its ID without ownership check (for background goroutine).
@@ -574,10 +573,15 @@ func GetBackupJobByIDInternal(jobID uuid.UUID) (*models.BackupJob, error) {
 	}
 	query := `SELECT backup_job_id, database_id, type, status, file_path, file_size, error_message, created_at, completed_at
 	           FROM backup_jobs WHERE backup_job_id = $1`
+	return scanBackupJob(AppDB.QueryRow(query, jobID), jobID)
+}
+
+// scanBackupJob is a shared helper that scans a single backup job row.
+func scanBackupJob(row *sql.Row, jobID uuid.UUID) (*models.BackupJob, error) {
 	job := &models.BackupJob{}
 	var completedAt sql.NullTime
 	var filePath, errorMessage string
-	err := AppDB.QueryRow(query, jobID).Scan(
+	err := row.Scan(
 		&job.BackupJobID, &job.DatabaseID, &job.Type, &job.Status, &filePath, &job.FileSize, &errorMessage, &job.CreatedAt, &completedAt,
 	)
 	if err != nil {
@@ -665,4 +669,35 @@ func HasActiveJobForDatabase(databaseID uuid.UUID) (*models.BackupJob, bool, err
 		job.CompletedAt = &completedAt.Time
 	}
 	return job, true, nil
+}
+
+// --- AuditLog ---
+
+// AuditLogEntry represents a row in the audit_log table.
+type AuditLogEntry struct {
+	AuditID      uuid.UUID  `json:"audit_id"`
+	ActorUserID  *uuid.UUID `json:"actor_user_id"`
+	Action       string     `json:"action"`
+	TargetType   string     `json:"target_type"`
+	TargetID     *string    `json:"target_id"`
+	Payload      any        `json:"payload,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
+// WriteAuditLog inserts an entry into the audit_log table.
+func WriteAuditLog(actorUserID *uuid.UUID, action, targetType, targetID string, payload any) error {
+	if AppDB == nil {
+		return errors.New("database not initialized")
+	}
+	query := `INSERT INTO audit_log (audit_id, actor_user_id, action, target_type, target_id, payload, created_at)
+	           VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	var payloadVal interface{}
+	if payload != nil {
+		payloadVal = payload
+	}
+	_, err := AppDB.Exec(query, uuid.New(), actorUserID, action, targetType, targetID, payloadVal, time.Now())
+	if err != nil {
+		log.Printf("Warning: failed to write audit log (action=%s, target=%s/%s): %v", action, targetType, targetID, err)
+	}
+	return err
 }

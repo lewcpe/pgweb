@@ -27,15 +27,24 @@ RUN npm run build
 # Final stage: Combine backend and frontend
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates tzdata postgresql-client
+RUN apk --no-cache add ca-certificates tzdata postgresql-client wget
+
+RUN addgroup -S app && adduser -S -G app app
 
 WORKDIR /app
 
 COPY --from=backend /app/main /app/main
 COPY --from=frontend /app/dist ./frontend/dist
 
+RUN chown -R app:app /app
+
 EXPOSE 8080
 
 ENV FRONTEND_DIST=/app/frontend/dist
+
+USER app
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:8080/health || exit 1
 
 CMD ["/app/main"]

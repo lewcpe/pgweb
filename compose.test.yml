@@ -24,7 +24,7 @@ services:
       PG_ADMIN_DSN: "postgres://test_admin:test_password@postgres:5432/test_admin_db?sslmode=disable"
       APP_DB_DSN: "postgres://test_admin:test_password@postgres:5432/test_admin_db?sslmode=disable"
       GIN_MODE: "release"
-      SESSION_SECRET_KEY: "test-session-secret"
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:-test-session-secret}
       PGWEB_TRUSTED_HEADER: "X-Forwarded-Email"
       FRONTEND_DIST: "/app/frontend/dist"
     ports:
