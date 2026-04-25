@@ -7,6 +7,7 @@ import (
 	"pgweb-backend/store"
 	"database/sql"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -486,17 +487,6 @@ func InitiateRestoreHandler(c *gin.Context) {
 		return
 	}
 
-	// Read uploaded dump data
-	dumpData, err := c.GetRawData()
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read upload data"})
-		return
-	}
-	if len(dumpData) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Empty upload data"})
-		return
-	}
-
 	pgAdminDSN := os.Getenv("PG_ADMIN_DSN")
 	if pgAdminDSN == "" {
 		log.Println("Error: PG_ADMIN_DSN not set for InitiateRestoreHandler")
@@ -509,20 +499,20 @@ func InitiateRestoreHandler(c *gin.Context) {
 		backupDir = "/tmp/pgweb-backups"
 	}
 
-	// Save uploaded file to disk
 	if err := os.MkdirAll(backupDir, 0755); err != nil {
 		log.Printf("Error creating backup directory %s: %v", backupDir, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare restore"})
 		return
 	}
 
+	// Create job record first to get a unique ID for the temp file
 	job := &models.BackupJob{
 		BackupJobID: uuid.New(),
 		DatabaseID:  databaseID,
 		Type:        "restore",
 		Status:      "pending",
 		FilePath:    "",
-		FileSize:    int64(len(dumpData)),
+		FileSize:    0,
 	}
 	if err := store.CreateBackupJob(job); err != nil {
 		log.Printf("Error creating restore job for database %s: %v", databaseID, err)
@@ -530,17 +520,35 @@ func InitiateRestoreHandler(c *gin.Context) {
 		return
 	}
 
-	// Save the uploaded dump to disk
+	// Stream upload directly to disk instead of buffering in memory
 	uploadPath := fmt.Sprintf("%s/%s-upload.dump", backupDir, job.BackupJobID.String())
-	if err := os.WriteFile(uploadPath, dumpData, 0644); err != nil {
-		log.Printf("Error saving uploaded dump for job %s: %v", job.BackupJobID, err)
+	outFile, err := os.Create(uploadPath)
+	if err != nil {
+		log.Printf("Error creating dump file for job %s: %v", job.BackupJobID, err)
+		store.UpdateBackupJobStatus(job.BackupJobID, "failed", "", 0, "Failed to create dump file")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save uploaded file"})
+		return
+	}
+
+	written, err := io.Copy(outFile, c.Request.Body)
+	outFile.Close()
+	if err != nil {
+		log.Printf("Error streaming upload to disk for job %s: %v", job.BackupJobID, err)
+		os.Remove(uploadPath)
 		store.UpdateBackupJobStatus(job.BackupJobID, "failed", "", 0, "Failed to save uploaded file")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save uploaded file"})
 		return
 	}
 
-	// Update job with file path
-	store.UpdateBackupJobStatus(job.BackupJobID, "pending", uploadPath, int64(len(dumpData)), "")
+	if written == 0 {
+		os.Remove(uploadPath)
+		store.UpdateBackupJobStatus(job.BackupJobID, "failed", "", 0, "Empty upload")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Empty upload data"})
+		return
+	}
+
+	// Update job with file path and size
+	store.UpdateBackupJobStatus(job.BackupJobID, "pending", uploadPath, written, "")
 
 	// Run pg_restore in background
 	go func(jobID uuid.UUID, dbName string, uploadPath string) {
