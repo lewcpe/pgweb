@@ -97,7 +97,7 @@ export const downloadBackup = async (databaseId: string, jobId: string, database
   URL.revokeObjectURL(url);
 };
 
-export const restoreDatabase = async (databaseId: string, file: File): Promise<void> => {
+export const restoreDatabase = async (databaseId: string, file: File): Promise<BackupJob> => {
   const response = await fetch(`${API_BASE_URL}/databases/${databaseId}/restore`, {
     method: 'POST',
     credentials: 'include',
@@ -110,4 +110,9 @@ export const restoreDatabase = async (databaseId: string, file: File): Promise<v
     const data = await response.json().catch(() => null);
     throw new Error(data?.error || `HTTP error! status: ${response.status}`);
   }
+  return response.json();
+};
+
+export const getRestoreStatus = (databaseId: string, jobId: string): Promise<BackupJob> => {
+  return api.get(`/databases/${databaseId}/restore/${jobId}`);
 };

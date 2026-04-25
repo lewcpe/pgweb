@@ -24,6 +24,7 @@ export interface PgUserWithPassword extends PgUser {
 export interface BackupJob {
   backup_job_id: string;
   database_id: string;
+  type: "backup" | "restore";
   status: "pending" | "in_progress" | "completed" | "failed";
   file_size: number;
   error_message?: string;

@@ -31,10 +31,11 @@ type DatabaseWithOwner struct {
 	OwnerEmail string `json:"owner_email" db:"owner_email"`
 }
 
-// BackupJob represents an asynchronous database backup operation.
+// BackupJob represents an asynchronous database backup or restore operation.
 type BackupJob struct {
 	BackupJobID  uuid.UUID  `json:"backup_job_id" db:"backup_job_id"`
 	DatabaseID   uuid.UUID  `json:"database_id" db:"database_id"`
+	Type         string     `json:"type" db:"type"` // "backup" or "restore"
 	Status       string     `json:"status" db:"status"` // "pending", "in_progress", "completed", "failed"
 	FilePath     string     `json:"-" db:"file_path"`
 	FileSize     int64      `json:"file_size" db:"file_size"`

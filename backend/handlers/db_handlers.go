@@ -301,7 +301,7 @@ func InitiateBackupHandler(c *gin.Context) {
 	}
 
 	// Check if there's already a pending/running backup job
-	latestJob, err := store.GetLatestBackupJobForDatabase(databaseID)
+	latestJob, err := store.GetLatestBackupJobForDatabase(databaseID, "backup")
 	if err == nil && (latestJob.Status == "pending" || latestJob.Status == "in_progress") {
 		c.JSON(http.StatusConflict, gin.H{"error": "A backup is already in progress", "backup_job": latestJob})
 		return
@@ -323,6 +323,7 @@ func InitiateBackupHandler(c *gin.Context) {
 	job := &models.BackupJob{
 		BackupJobID: uuid.New(),
 		DatabaseID:  databaseID,
+		Type:        "backup",
 		Status:      "pending",
 		FilePath:    "",
 		FileSize:    0,
@@ -440,8 +441,8 @@ func DownloadBackupHandler(c *gin.Context) {
 	c.File(job.FilePath)
 }
 
-// RestoreDatabaseHandler handles requests to restore a database from an uploaded dump.
-func RestoreDatabaseHandler(c *gin.Context) {
+// InitiateRestoreHandler accepts a dump file upload and starts an async restore job.
+func InitiateRestoreHandler(c *gin.Context) {
 	currentUser := auth.GetUserFromSession(c)
 	if currentUser == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
@@ -472,19 +473,123 @@ func RestoreDatabaseHandler(c *gin.Context) {
 		return
 	}
 
+	// Check if there's already a pending/running restore job
+	latestJob, err := store.GetLatestBackupJobForDatabase(databaseID, "restore")
+	if err == nil && (latestJob.Status == "pending" || latestJob.Status == "in_progress") {
+		c.JSON(http.StatusConflict, gin.H{"error": "A restore is already in progress", "restore_job": latestJob})
+		return
+	}
+
+	// Read uploaded dump data
+	dumpData, err := c.GetRawData()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read upload data"})
+		return
+	}
+	if len(dumpData) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Empty upload data"})
+		return
+	}
+
 	pgAdminDSN := os.Getenv("PG_ADMIN_DSN")
 	if pgAdminDSN == "" {
-		log.Println("Error: PG_ADMIN_DSN not set for RestoreDatabaseHandler")
+		log.Println("Error: PG_ADMIN_DSN not set for InitiateRestoreHandler")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database restore is not configured"})
 		return
 	}
 
-	if err := dbutils.RestoreDatabaseFromReader(pgAdminDSN, managedDB.PGDatabaseName, c.Request.Body); err != nil {
-		log.Printf("Error restoring database %s: %v", managedDB.PGDatabaseName, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to restore database: " + err.Error()})
+	backupDir := os.Getenv("BACKUP_DIR")
+	if backupDir == "" {
+		backupDir = "/tmp/pgweb-backups"
+	}
+
+	// Save uploaded file to disk
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		log.Printf("Error creating backup directory %s: %v", backupDir, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare restore"})
 		return
 	}
 
-	log.Printf("Database %s (ID: %s) restored by user %s", managedDB.PGDatabaseName, databaseID, currentUser.InternalUserID)
-	c.JSON(http.StatusOK, gin.H{"message": "Database restored successfully"})
+	job := &models.BackupJob{
+		BackupJobID: uuid.New(),
+		DatabaseID:  databaseID,
+		Type:        "restore",
+		Status:      "pending",
+		FilePath:    "",
+		FileSize:    int64(len(dumpData)),
+	}
+	if err := store.CreateBackupJob(job); err != nil {
+		log.Printf("Error creating restore job for database %s: %v", databaseID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create restore job"})
+		return
+	}
+
+	// Save the uploaded dump to disk
+	uploadPath := fmt.Sprintf("%s/%s-upload.dump", backupDir, job.BackupJobID.String())
+	if err := os.WriteFile(uploadPath, dumpData, 0644); err != nil {
+		log.Printf("Error saving uploaded dump for job %s: %v", job.BackupJobID, err)
+		store.UpdateBackupJobStatus(job.BackupJobID, "failed", "", 0, "Failed to save uploaded file")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save uploaded file"})
+		return
+	}
+
+	// Update job with file path
+	store.UpdateBackupJobStatus(job.BackupJobID, "pending", uploadPath, int64(len(dumpData)), "")
+
+	// Run pg_restore in background
+	go func(jobID uuid.UUID, dbName string, uploadPath string) {
+		// Update status to in_progress
+		if err := store.UpdateBackupJobStatus(jobID, "in_progress", uploadPath, 0, ""); err != nil {
+			log.Printf("Error updating restore job %s status: %v", jobID, err)
+		}
+
+		log.Printf("Starting restore for database %s (job %s)", dbName, jobID)
+		err := dbutils.RestoreDatabaseFromFile(pgAdminDSN, dbName, uploadPath)
+		if err != nil {
+			log.Printf("Error restoring database %s: %v", dbName, err)
+			store.UpdateBackupJobStatus(jobID, "failed", uploadPath, 0, err.Error())
+			return
+		}
+
+		info, _ := os.Stat(uploadPath)
+		var fileSize int64
+		if info != nil {
+			fileSize = info.Size()
+		}
+		if err := store.UpdateBackupJobStatus(jobID, "completed", uploadPath, fileSize, ""); err != nil {
+			log.Printf("Error updating restore job %s to completed: %v", jobID, err)
+		}
+		log.Printf("Restore completed for database %s (job %s)", dbName, jobID)
+	}(job.BackupJobID, managedDB.PGDatabaseName, uploadPath)
+
+	c.JSON(http.StatusAccepted, job)
+}
+
+// RestoreStatusHandler returns the status of a restore job.
+func RestoreStatusHandler(c *gin.Context) {
+	currentUser := auth.GetUserFromSession(c)
+	if currentUser == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	jobIDStr := c.Param("job_id")
+	jobID, err := uuid.Parse(jobIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid restore job ID format"})
+		return
+	}
+
+	job, err := store.GetBackupJobByID(jobID, currentUser.InternalUserID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Restore job not found"})
+			return
+		}
+		log.Printf("Error fetching restore job %s: %v", jobID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve restore job"})
+		return
+	}
+
+	c.JSON(http.StatusOK, job)
 }

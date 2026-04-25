@@ -494,6 +494,7 @@ func CreateBackupJobsTable(appDbDSN string) error {
 CREATE TABLE IF NOT EXISTS backup_jobs (
 	backup_job_id UUID PRIMARY KEY,
 	database_id UUID NOT NULL,
+	type TEXT NOT NULL DEFAULT 'backup',
 	status TEXT NOT NULL,
 	file_path TEXT NOT NULL DEFAULT '',
 	file_size BIGINT NOT NULL DEFAULT 0,
@@ -510,6 +511,10 @@ CREATE TABLE IF NOT EXISTS backup_jobs (
 	if err != nil {
 		return fmt.Errorf("failed to create backup_jobs table: %w", err)
 	}
+
+	// Add type column if it doesn't exist (migration for existing tables)
+	_, _ = db.Exec("ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'backup'")
+
 	log.Println("backup_jobs table ensured to exist.")
 	return nil
 }
@@ -523,9 +528,9 @@ func CreateBackupJob(job *models.BackupJob) error {
 		job.BackupJobID = uuid.New()
 	}
 	job.CreatedAt = time.Now()
-	query := `INSERT INTO backup_jobs (backup_job_id, database_id, status, file_path, file_size, error_message, created_at)
-	           VALUES ($1, $2, $3, $4, $5, $6, $7)`
-	_, err := AppDB.Exec(query, job.BackupJobID, job.DatabaseID, job.Status, job.FilePath, job.FileSize, job.ErrorMessage, job.CreatedAt)
+	query := `INSERT INTO backup_jobs (backup_job_id, database_id, type, status, file_path, file_size, error_message, created_at)
+	           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	_, err := AppDB.Exec(query, job.BackupJobID, job.DatabaseID, job.Type, job.Status, job.FilePath, job.FileSize, job.ErrorMessage, job.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("error creating backup job for database %s: %w", job.DatabaseID, err)
 	}
@@ -538,7 +543,7 @@ func GetBackupJobByID(jobID uuid.UUID, ownerUserID uuid.UUID) (*models.BackupJob
 		return nil, errors.New("database not initialized")
 	}
 	query := `
-		SELECT bj.backup_job_id, bj.database_id, bj.status, bj.file_path, bj.file_size, bj.error_message, bj.created_at, bj.completed_at
+		SELECT bj.backup_job_id, bj.database_id, bj.type, bj.status, bj.file_path, bj.file_size, bj.error_message, bj.created_at, bj.completed_at
 		FROM backup_jobs bj
 		JOIN managed_databases d ON bj.database_id = d.database_id
 		WHERE bj.backup_job_id = $1 AND d.owner_user_id = $2`
@@ -546,7 +551,7 @@ func GetBackupJobByID(jobID uuid.UUID, ownerUserID uuid.UUID) (*models.BackupJob
 	var completedAt sql.NullTime
 	var filePath, errorMessage string
 	err := AppDB.QueryRow(query, jobID, ownerUserID).Scan(
-		&job.BackupJobID, &job.DatabaseID, &job.Status, &filePath, &job.FileSize, &errorMessage, &job.CreatedAt, &completedAt,
+		&job.BackupJobID, &job.DatabaseID, &job.Type, &job.Status, &filePath, &job.FileSize, &errorMessage, &job.CreatedAt, &completedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -567,13 +572,13 @@ func GetBackupJobByIDInternal(jobID uuid.UUID) (*models.BackupJob, error) {
 	if AppDB == nil {
 		return nil, errors.New("database not initialized")
 	}
-	query := `SELECT backup_job_id, database_id, status, file_path, file_size, error_message, created_at, completed_at
+	query := `SELECT backup_job_id, database_id, type, status, file_path, file_size, error_message, created_at, completed_at
 	           FROM backup_jobs WHERE backup_job_id = $1`
 	job := &models.BackupJob{}
 	var completedAt sql.NullTime
 	var filePath, errorMessage string
 	err := AppDB.QueryRow(query, jobID).Scan(
-		&job.BackupJobID, &job.DatabaseID, &job.Status, &filePath, &job.FileSize, &errorMessage, &job.CreatedAt, &completedAt,
+		&job.BackupJobID, &job.DatabaseID, &job.Type, &job.Status, &filePath, &job.FileSize, &errorMessage, &job.CreatedAt, &completedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -607,18 +612,18 @@ func UpdateBackupJobStatus(jobID uuid.UUID, status string, filePath string, file
 	return nil
 }
 
-// GetLatestBackupJobForDatabase retrieves the most recent backup job for a database.
-func GetLatestBackupJobForDatabase(databaseID uuid.UUID) (*models.BackupJob, error) {
+// GetLatestBackupJobForDatabase retrieves the most recent backup job of a given type for a database.
+func GetLatestBackupJobForDatabase(databaseID uuid.UUID, jobType string) (*models.BackupJob, error) {
 	if AppDB == nil {
 		return nil, errors.New("database not initialized")
 	}
-	query := `SELECT backup_job_id, database_id, status, file_path, file_size, error_message, created_at, completed_at
-	           FROM backup_jobs WHERE database_id = $1 ORDER BY created_at DESC LIMIT 1`
+	query := `SELECT backup_job_id, database_id, type, status, file_path, file_size, error_message, created_at, completed_at
+	           FROM backup_jobs WHERE database_id = $1 AND type = $2 ORDER BY created_at DESC LIMIT 1`
 	job := &models.BackupJob{}
 	var completedAt sql.NullTime
 	var filePath, errorMessage string
-	err := AppDB.QueryRow(query, databaseID).Scan(
-		&job.BackupJobID, &job.DatabaseID, &job.Status, &filePath, &job.FileSize, &errorMessage, &job.CreatedAt, &completedAt,
+	err := AppDB.QueryRow(query, databaseID, jobType).Scan(
+		&job.BackupJobID, &job.DatabaseID, &job.Type, &job.Status, &filePath, &job.FileSize, &errorMessage, &job.CreatedAt, &completedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

@@ -194,9 +194,28 @@ test.describe('Database Backup and Restore E2E', () => {
         data: dumpData,
       },
     );
-    expect(restoreResponse.status()).toBe(200);
-    const body = await restoreResponse.json();
-    expect(body.message).toBe('Database restored successfully');
+    expect(restoreResponse.status()).toBe(202);
+    const job = await restoreResponse.json();
+    expect(job).toHaveProperty('backup_job_id');
+    expect(job.type).toBe('restore');
+    expect(['pending', 'in_progress']).toContain(job.status);
+
+    // Poll until restore completes
+    let status = job.status;
+    let attempts = 0;
+    const maxAttempts = 60;
+    while (status !== 'completed' && status !== 'failed' && attempts < maxAttempts) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const pollResponse = await request.get(
+        `/api/databases/${testDbId}/restore/${job.backup_job_id}`,
+        { headers: authHeaders },
+      );
+      expect(pollResponse.status()).toBe(200);
+      const pollBody = await pollResponse.json();
+      status = pollBody.status;
+      attempts++;
+    }
+    expect(status).toBe('completed');
   });
 
   test('should verify table and records survive restore', async () => {

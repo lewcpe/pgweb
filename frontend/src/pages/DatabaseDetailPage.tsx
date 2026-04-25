@@ -12,7 +12,7 @@ import { CreatePgUserDialog } from "@/components/create-pguser-dialog"
 import { RegeneratePasswordDialog } from "@/components/regenerate-password-dialog"
 import { DeleteDatabaseDialog } from "@/components/delete-database-dialog"
 import { DeletePgUserDialog } from "@/components/delete-pguser-dialog"
-import { getDatabaseDetails, getPgUsers, initiateBackup, getBackupStatus, downloadBackup, restoreDatabase } from "@/lib/api"
+import { getDatabaseDetails, getPgUsers, initiateBackup, getBackupStatus, downloadBackup, restoreDatabase, getRestoreStatus } from "@/lib/api"
 import { DatabaseDetails, PgUser, PgUserWithPassword, BackupJob } from "@/types/types"
 
 export function DatabaseDetailPage() {
@@ -37,7 +37,8 @@ export function DatabaseDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [backupJob, setBackupJob] = useState<BackupJob | null>(null)
   const [backupLoading, setBackupLoading] = useState(false)
-  const [restoring, setRestoring] = useState(false)
+  const [restoreJob, setRestoreJob] = useState<BackupJob | null>(null)
+  const [restoreLoading, setRestoreLoading] = useState(false)
   const restoreInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -67,6 +68,29 @@ export function DatabaseDetailPage() {
 
     return () => clearInterval(interval)
   }, [backupJob?.status, backupJob?.backup_job_id, databaseId])
+
+  useEffect(() => {
+    if (!restoreJob || restoreJob.status === "completed" || restoreJob.status === "failed") return
+
+    const interval = setInterval(async () => {
+      try {
+        const updated = await getRestoreStatus(databaseId, restoreJob.backup_job_id)
+        setRestoreJob(updated)
+        if (updated.status === "completed") {
+          clearInterval(interval)
+          toast({ title: "Restore complete", description: "Database has been restored successfully." })
+        } else if (updated.status === "failed") {
+          clearInterval(interval)
+          toast({ title: "Restore failed", description: updated.error_message || "Failed to restore database.", variant: "destructive" })
+        }
+      } catch (error) {
+        console.error("Failed to poll restore status:", error)
+        clearInterval(interval)
+      }
+    }, 2000)
+
+    return () => clearInterval(interval)
+  }, [restoreJob?.status, restoreJob?.backup_job_id, databaseId])
 
   const fetchDatabaseDetails = async () => {
     try {
@@ -160,14 +184,15 @@ export function DatabaseDetailPage() {
     if (!file) return
 
     try {
-      setRestoring(true)
-      await restoreDatabase(database.database_id, file)
-      toast({ title: "Restore complete", description: "Database has been restored successfully." })
+      setRestoreLoading(true)
+      const job = await restoreDatabase(database.database_id, file)
+      setRestoreJob(job)
+      toast({ title: "Restore started", description: "Your database is being restored. This may take a while." })
     } catch (error) {
-      console.error("Failed to restore database:", error)
-      toast({ title: "Restore failed", description: "Failed to restore database.", variant: "destructive" })
+      console.error("Failed to initiate restore:", error)
+      toast({ title: "Restore failed", description: "Failed to start restore.", variant: "destructive" })
     } finally {
-      setRestoring(false)
+      setRestoreLoading(false)
       if (restoreInputRef.current) {
         restoreInputRef.current.value = ""
       }
@@ -286,9 +311,9 @@ export function DatabaseDetailPage() {
               {backupLoading ? "Starting..." : "Backup"}
             </Button>
           )}
-          <Button variant="outline" onClick={() => restoreInputRef.current?.click()} disabled={restoring || database.status !== "active"}>
+          <Button variant="outline" onClick={() => restoreInputRef.current?.click()} disabled={restoreLoading || restoreJob?.status === "in_progress" || restoreJob?.status === "pending" || database.status !== "active"}>
             <Upload className="h-4 w-4 mr-2" />
-            {restoring ? "Restoring..." : "Restore"}
+            {restoreJob?.status === "in_progress" || restoreJob?.status === "pending" ? "Restoring..." : restoreLoading ? "Starting..." : "Restore"}
           </Button>
           <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)}>
             <Trash2 className="h-4 w-4 mr-2" />

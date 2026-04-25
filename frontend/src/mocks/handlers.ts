@@ -173,6 +173,7 @@ export const handlers = [
     const job: BackupJob = {
       backup_job_id: `bj-${Date.now()}`,
       database_id: 'db-001',
+      type: 'backup',
       status: 'pending',
       file_size: 0,
       created_at: new Date().toISOString(),
@@ -185,6 +186,7 @@ export const handlers = [
     const job: BackupJob = {
       backup_job_id: 'bj-completed',
       database_id: 'db-001',
+      type: 'backup',
       status: 'completed',
       file_size: 1024 * 512,
       created_at: new Date(Date.now() - 10000).toISOString(),
@@ -206,7 +208,29 @@ export const handlers = [
   }),
 
   http.post('/api/databases/:id/restore', async () => {
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    return HttpResponse.json({ message: 'Database restored successfully' })
+    await new Promise(resolve => setTimeout(resolve, 500))
+    const job: BackupJob = {
+      backup_job_id: `rj-${Date.now()}`,
+      database_id: 'db-001',
+      type: 'restore',
+      status: 'pending',
+      file_size: 1024,
+      created_at: new Date().toISOString(),
+    }
+    return HttpResponse.json(job, { status: 202 })
+  }),
+
+  http.get('/api/databases/:id/restore/:jobId', async () => {
+    await new Promise(resolve => setTimeout(resolve, 200))
+    const job: BackupJob = {
+      backup_job_id: 'rj-completed',
+      database_id: 'db-001',
+      type: 'restore',
+      status: 'completed',
+      file_size: 1024,
+      created_at: new Date(Date.now() - 10000).toISOString(),
+      completed_at: new Date().toISOString(),
+    }
+    return HttpResponse.json(job)
   }),
 ]

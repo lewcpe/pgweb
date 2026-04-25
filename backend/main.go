@@ -147,7 +147,8 @@ func main() {
 			databasesGroup.POST("/:database_id/backup", handlers.InitiateBackupHandler)
 			databasesGroup.GET("/:database_id/backup/:job_id", handlers.BackupStatusHandler)
 			databasesGroup.GET("/:database_id/backup/:job_id/download", handlers.DownloadBackupHandler)
-			databasesGroup.POST("/:database_id/restore", handlers.RestoreDatabaseHandler)
+			databasesGroup.POST("/:database_id/restore", handlers.InitiateRestoreHandler)
+			databasesGroup.GET("/:database_id/restore/:job_id", handlers.RestoreStatusHandler)
 
 			// PG User management within a database
 			pgUserRoutes := databasesGroup.Group("/:database_id/pgusers")
