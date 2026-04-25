@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -708,6 +709,60 @@ func TestSanitizeIdentifier(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestCreatePostgresDatabase_ConcurrentDoesNotRace asserts that many concurrent
+// CreatePostgresDatabase calls all succeed. Postgres serializes CREATE DATABASE
+// through template1, so two concurrent calls within one process can fail with
+// "source database template1 is being accessed by other users". Without
+// in-process serialization this test is flaky; with the mutex it must always
+// pass.
+func TestCreatePostgresDatabase_ConcurrentDoesNotRace(t *testing.T) {
+	adminDSN := os.Getenv("PG_ADMIN_DSN")
+	if adminDSN == "" {
+		t.Skip("PG_ADMIN_DSN not set")
+	}
+
+	const n = 10
+	suffix := strings.ReplaceAll(uuid.New().String()[:8], "-", "")
+	names := make([]string, n)
+	for i := range names {
+		names[i] = fmt.Sprintf("racetest_%s_%d", suffix, i)
+	}
+
+	t.Cleanup(func() {
+		adminDB, err := connectToDB(adminDSN)
+		if err != nil {
+			t.Logf("cleanup: connect: %v", err)
+			return
+		}
+		defer adminDB.Close()
+		for _, name := range names {
+			if _, err := adminDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", name)); err != nil {
+				t.Logf("cleanup: drop %s: %v", name, err)
+			}
+		}
+	})
+
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	start := make(chan struct{})
+	for i, name := range names {
+		wg.Add(1)
+		go func(i int, name string) {
+			defer wg.Done()
+			<-start
+			errs[i] = CreatePostgresDatabase(adminDSN, name)
+		}(i, name)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("concurrent create #%d (%s) failed: %v", i, names[i], err)
+		}
 	}
 }
 
