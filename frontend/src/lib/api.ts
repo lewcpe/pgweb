@@ -1,4 +1,4 @@
-import { DatabaseDetails, PgUser, PgUserWithPassword } from "@/types/types";
+import { DatabaseDetails, PgUser, PgUserWithPassword, BackupJob } from "@/types/types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
 
@@ -69,4 +69,50 @@ export const deletePgUser = (databaseId: string, pgUserId: string): Promise<void
 
 export const deleteDatabase = (databaseId: string): Promise<void> => {
   return api.delete(`/databases/${databaseId}`);
+};
+
+export const initiateBackup = (databaseId: string): Promise<BackupJob> => {
+  return api.post(`/databases/${databaseId}/backup`, {});
+};
+
+export const getBackupStatus = (databaseId: string, jobId: string): Promise<BackupJob> => {
+  return api.get(`/databases/${databaseId}/backup/${jobId}`);
+};
+
+export const downloadBackup = async (databaseId: string, jobId: string, databaseName: string): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/databases/${databaseId}/backup/${jobId}/download`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${databaseName}.dump`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+export const restoreDatabase = async (databaseId: string, file: File): Promise<BackupJob> => {
+  const response = await fetch(`${API_BASE_URL}/databases/${databaseId}/restore`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+    },
+    body: file,
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.error || `HTTP error! status: ${response.status}`);
+  }
+  return response.json();
+};
+
+export const getRestoreStatus = (databaseId: string, jobId: string): Promise<BackupJob> => {
+  return api.get(`/databases/${databaseId}/restore/${jobId}`);
 };

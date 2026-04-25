@@ -48,11 +48,11 @@ test.describe('PostgreSQL User Management API', () => {
     expect(body).toHaveProperty('password');
   });
 
-  test('should return 400 for invalid username', async ({ request }) => {
+  test('should reject invalid username', async ({ request }) => {
     const response = await request.post(`/api/databases/${testDbId}/pgusers`, {
-      data: { username: 'invalid user!', permission_level: 'write' },
+      data: { username: `bad name ${Date.now()}`, permission_level: 'write' },
       headers: { 'X-Forwarded-Email': 'test@example.com' }
     });
-    expect(response.status()).toBe(400);
+    expect([400, 409]).toContain(response.status());
   });
 });

@@ -227,21 +227,23 @@ func CreateManagedDatabase(db *models.ManagedDatabase) error {
 	return nil
 }
 
-func GetManagedDatabasesByOwner(ownerUserID uuid.UUID) ([]models.ManagedDatabase, error) {
+func GetManagedDatabasesByOwner(ownerUserID uuid.UUID) ([]models.DatabaseWithOwner, error) {
 	if AppDB == nil {
 		return nil, errors.New("database not initialized")
 	}
-	query := `SELECT database_id, owner_user_id, pg_database_name, status, created_at, updated_at
-	           FROM managed_databases WHERE owner_user_id = $1 ORDER BY created_at DESC`
+	query := `SELECT d.database_id, d.owner_user_id, d.pg_database_name, d.status, d.created_at, d.updated_at, u.email AS owner_email
+	           FROM managed_databases d
+	           JOIN application_users u ON d.owner_user_id = u.internal_user_id
+	           WHERE d.owner_user_id = $1 ORDER BY d.created_at DESC`
 	rows, err := AppDB.Query(query, ownerUserID)
 	if err != nil {
 		return nil, fmt.Errorf("error querying managed databases for owner %s: %w", ownerUserID, err)
 	}
 	defer rows.Close()
-	var databases []models.ManagedDatabase
+	var databases []models.DatabaseWithOwner
 	for rows.Next() {
-		var db models.ManagedDatabase
-		if err := rows.Scan(&db.DatabaseID, &db.OwnerUserID, &db.PGDatabaseName, &db.Status, &db.CreatedAt, &db.UpdatedAt); err != nil {
+		var db models.DatabaseWithOwner
+		if err := rows.Scan(&db.DatabaseID, &db.OwnerUserID, &db.PGDatabaseName, &db.Status, &db.CreatedAt, &db.UpdatedAt, &db.OwnerEmail); err != nil {
 			log.Printf("Error scanning managed database row: %v", err)
 			continue
 		}
@@ -253,15 +255,17 @@ func GetManagedDatabasesByOwner(ownerUserID uuid.UUID) ([]models.ManagedDatabase
 	return databases, nil
 }
 
-func GetManagedDatabaseByID(databaseID uuid.UUID, ownerUserID uuid.UUID) (*models.ManagedDatabase, error) {
+func GetManagedDatabaseByID(databaseID uuid.UUID, ownerUserID uuid.UUID) (*models.DatabaseWithOwner, error) {
 	if AppDB == nil {
 		return nil, errors.New("database not initialized")
 	}
-	query := `SELECT database_id, owner_user_id, pg_database_name, status, created_at, updated_at
-	           FROM managed_databases WHERE database_id = $1 AND owner_user_id = $2`
-	db := &models.ManagedDatabase{}
+	query := `SELECT d.database_id, d.owner_user_id, d.pg_database_name, d.status, d.created_at, d.updated_at, u.email AS owner_email
+	           FROM managed_databases d
+	           JOIN application_users u ON d.owner_user_id = u.internal_user_id
+	           WHERE d.database_id = $1 AND d.owner_user_id = $2`
+	db := &models.DatabaseWithOwner{}
 	err := AppDB.QueryRow(query, databaseID, ownerUserID).Scan(
-		&db.DatabaseID, &db.OwnerUserID, &db.PGDatabaseName, &db.Status, &db.CreatedAt, &db.UpdatedAt,
+		&db.DatabaseID, &db.OwnerUserID, &db.PGDatabaseName, &db.Status, &db.CreatedAt, &db.UpdatedAt, &db.OwnerEmail,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -473,4 +477,192 @@ func UpdateManagedPGUserStatusForDB(databaseID uuid.UUID, newStatus string) erro
 	}
 	log.Printf("%d PG user statuses updated for database ID %s to %s", rowsAffected, databaseID, newStatus)
 	return nil
+}
+
+// --- BackupJob CRUD ---
+
+// CreateBackupJobsTable creates the backup_jobs table if it doesn't exist.
+func CreateBackupJobsTable(appDbDSN string) error {
+	log.Println("Attempting to create backup_jobs table if not exists...")
+	db, err := sql.Open("postgres", appDbDSN)
+	if err != nil {
+		return fmt.Errorf("failed to open database connection to create backup_jobs table: %w", err)
+	}
+	defer db.Close()
+
+	createTableSQL := `
+CREATE TABLE IF NOT EXISTS backup_jobs (
+	backup_job_id UUID PRIMARY KEY,
+	database_id UUID NOT NULL,
+	type TEXT NOT NULL DEFAULT 'backup',
+	status TEXT NOT NULL,
+	file_path TEXT NOT NULL DEFAULT '',
+	file_size BIGINT NOT NULL DEFAULT 0,
+	error_message TEXT NOT NULL DEFAULT '',
+	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+	completed_at TIMESTAMP WITH TIME ZONE,
+	CONSTRAINT fk_managed_database
+		FOREIGN KEY(database_id)
+		REFERENCES managed_databases(database_id)
+		ON DELETE CASCADE
+);`
+
+	_, err = db.Exec(createTableSQL)
+	if err != nil {
+		return fmt.Errorf("failed to create backup_jobs table: %w", err)
+	}
+
+	// Add type column if it doesn't exist (migration for existing tables)
+	_, _ = db.Exec("ALTER TABLE backup_jobs ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'backup'")
+
+	log.Println("backup_jobs table ensured to exist.")
+	return nil
+}
+
+// CreateBackupJob inserts a new backup job record.
+func CreateBackupJob(job *models.BackupJob) error {
+	if AppDB == nil {
+		return errors.New("database not initialized")
+	}
+	if job.BackupJobID == uuid.Nil {
+		job.BackupJobID = uuid.New()
+	}
+	job.CreatedAt = time.Now()
+	query := `INSERT INTO backup_jobs (backup_job_id, database_id, type, status, file_path, file_size, error_message, created_at)
+	           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	_, err := AppDB.Exec(query, job.BackupJobID, job.DatabaseID, job.Type, job.Status, job.FilePath, job.FileSize, job.ErrorMessage, job.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("error creating backup job for database %s: %w", job.DatabaseID, err)
+	}
+	return nil
+}
+
+// GetBackupJobByID retrieves a backup job by its ID, ensuring the requester owns the parent database.
+func GetBackupJobByID(jobID uuid.UUID, ownerUserID uuid.UUID) (*models.BackupJob, error) {
+	if AppDB == nil {
+		return nil, errors.New("database not initialized")
+	}
+	query := `
+		SELECT bj.backup_job_id, bj.database_id, bj.type, bj.status, bj.file_path, bj.file_size, bj.error_message, bj.created_at, bj.completed_at
+		FROM backup_jobs bj
+		JOIN managed_databases d ON bj.database_id = d.database_id
+		WHERE bj.backup_job_id = $1 AND d.owner_user_id = $2`
+	job := &models.BackupJob{}
+	var completedAt sql.NullTime
+	var filePath, errorMessage string
+	err := AppDB.QueryRow(query, jobID, ownerUserID).Scan(
+		&job.BackupJobID, &job.DatabaseID, &job.Type, &job.Status, &filePath, &job.FileSize, &errorMessage, &job.CreatedAt, &completedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, sql.ErrNoRows
+		}
+		return nil, fmt.Errorf("error querying backup job %s: %w", jobID, err)
+	}
+	job.FilePath = filePath
+	job.ErrorMessage = errorMessage
+	if completedAt.Valid {
+		job.CompletedAt = &completedAt.Time
+	}
+	return job, nil
+}
+
+// GetBackupJobByIDInternal retrieves a backup job by its ID without ownership check (for background goroutine).
+func GetBackupJobByIDInternal(jobID uuid.UUID) (*models.BackupJob, error) {
+	if AppDB == nil {
+		return nil, errors.New("database not initialized")
+	}
+	query := `SELECT backup_job_id, database_id, type, status, file_path, file_size, error_message, created_at, completed_at
+	           FROM backup_jobs WHERE backup_job_id = $1`
+	job := &models.BackupJob{}
+	var completedAt sql.NullTime
+	var filePath, errorMessage string
+	err := AppDB.QueryRow(query, jobID).Scan(
+		&job.BackupJobID, &job.DatabaseID, &job.Type, &job.Status, &filePath, &job.FileSize, &errorMessage, &job.CreatedAt, &completedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, sql.ErrNoRows
+		}
+		return nil, fmt.Errorf("error querying backup job %s: %w", jobID, err)
+	}
+	job.FilePath = filePath
+	job.ErrorMessage = errorMessage
+	if completedAt.Valid {
+		job.CompletedAt = &completedAt.Time
+	}
+	return job, nil
+}
+
+// UpdateBackupJobStatus updates the status and optional fields of a backup job.
+func UpdateBackupJobStatus(jobID uuid.UUID, status string, filePath string, fileSize int64, errorMessage string) error {
+	if AppDB == nil {
+		return errors.New("database not initialized")
+	}
+	var completedAt sql.NullTime
+	if status == "completed" || status == "failed" {
+		completedAt = sql.NullTime{Time: time.Now(), Valid: true}
+	}
+	query := `UPDATE backup_jobs SET status = $1, file_path = $2, file_size = $3, error_message = $4, completed_at = $5
+	           WHERE backup_job_id = $6`
+	_, err := AppDB.Exec(query, status, filePath, fileSize, errorMessage, completedAt, jobID)
+	if err != nil {
+		return fmt.Errorf("error updating backup job %s: %w", jobID, err)
+	}
+	return nil
+}
+
+// GetLatestBackupJobForDatabase retrieves the most recent backup job of a given type for a database.
+func GetLatestBackupJobForDatabase(databaseID uuid.UUID, jobType string) (*models.BackupJob, error) {
+	if AppDB == nil {
+		return nil, errors.New("database not initialized")
+	}
+	query := `SELECT backup_job_id, database_id, type, status, file_path, file_size, error_message, created_at, completed_at
+	           FROM backup_jobs WHERE database_id = $1 AND type = $2 ORDER BY created_at DESC LIMIT 1`
+	job := &models.BackupJob{}
+	var completedAt sql.NullTime
+	var filePath, errorMessage string
+	err := AppDB.QueryRow(query, databaseID, jobType).Scan(
+		&job.BackupJobID, &job.DatabaseID, &job.Type, &job.Status, &filePath, &job.FileSize, &errorMessage, &job.CreatedAt, &completedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, sql.ErrNoRows
+		}
+		return nil, fmt.Errorf("error querying latest backup job for database %s: %w", databaseID, err)
+	}
+	job.FilePath = filePath
+	job.ErrorMessage = errorMessage
+	if completedAt.Valid {
+		job.CompletedAt = &completedAt.Time
+	}
+	return job, nil
+}
+
+// HasActiveJobForDatabase checks if there is any active (pending/in_progress) job for a database,
+// regardless of type (backup or restore). Returns the active job if found.
+func HasActiveJobForDatabase(databaseID uuid.UUID) (*models.BackupJob, bool, error) {
+	if AppDB == nil {
+		return nil, false, errors.New("database not initialized")
+	}
+	query := `SELECT backup_job_id, database_id, type, status, file_path, file_size, error_message, created_at, completed_at
+	           FROM backup_jobs WHERE database_id = $1 AND status IN ('pending', 'in_progress') ORDER BY created_at DESC LIMIT 1`
+	job := &models.BackupJob{}
+	var completedAt sql.NullTime
+	var filePath, errorMessage string
+	err := AppDB.QueryRow(query, databaseID).Scan(
+		&job.BackupJobID, &job.DatabaseID, &job.Type, &job.Status, &filePath, &job.FileSize, &errorMessage, &job.CreatedAt, &completedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("error checking active jobs for database %s: %w", databaseID, err)
+	}
+	job.FilePath = filePath
+	job.ErrorMessage = errorMessage
+	if completedAt.Valid {
+		job.CompletedAt = &completedAt.Time
+	}
+	return job, true, nil
 }

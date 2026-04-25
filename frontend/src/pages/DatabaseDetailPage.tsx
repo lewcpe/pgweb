@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { ArrowLeft, Database, Users, Calendar, Activity, Plus, Key, Trash2 } from "lucide-react"
+import { ArrowLeft, Database, Users, Calendar, Activity, Plus, Key, Trash2, Download, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -12,8 +12,8 @@ import { CreatePgUserDialog } from "@/components/create-pguser-dialog"
 import { RegeneratePasswordDialog } from "@/components/regenerate-password-dialog"
 import { DeleteDatabaseDialog } from "@/components/delete-database-dialog"
 import { DeletePgUserDialog } from "@/components/delete-pguser-dialog"
-import { getDatabaseDetails, getPgUsers } from "@/lib/api"
-import { DatabaseDetails, PgUser, PgUserWithPassword } from "@/types/types"
+import { getDatabaseDetails, getPgUsers, initiateBackup, getBackupStatus, downloadBackup, restoreDatabase, getRestoreStatus } from "@/lib/api"
+import { DatabaseDetails, PgUser, PgUserWithPassword, BackupJob } from "@/types/types"
 
 export function DatabaseDetailPage() {
   const params = useParams()
@@ -35,11 +35,62 @@ export function DatabaseDetailPage() {
     user: PgUser | null
   }>({ open: false, user: null })
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [backupJob, setBackupJob] = useState<BackupJob | null>(null)
+  const [backupLoading, setBackupLoading] = useState(false)
+  const [restoreJob, setRestoreJob] = useState<BackupJob | null>(null)
+  const [restoreLoading, setRestoreLoading] = useState(false)
+  const restoreInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetchDatabaseDetails()
     fetchPgUsers()
   }, [databaseId])
+
+  useEffect(() => {
+    if (!backupJob || backupJob.status === "completed" || backupJob.status === "failed") return
+
+    const interval = setInterval(async () => {
+      try {
+        const updated = await getBackupStatus(databaseId, backupJob.backup_job_id)
+        setBackupJob(updated)
+        if (updated.status === "completed") {
+          clearInterval(interval)
+          toast({ title: "Backup ready", description: "Your database backup is ready to download." })
+        } else if (updated.status === "failed") {
+          clearInterval(interval)
+          toast({ title: "Backup failed", description: updated.error_message || "Failed to backup database.", variant: "destructive" })
+        }
+      } catch (error) {
+        console.error("Failed to poll backup status:", error)
+        clearInterval(interval)
+      }
+    }, 2000)
+
+    return () => clearInterval(interval)
+  }, [backupJob?.status, backupJob?.backup_job_id, databaseId])
+
+  useEffect(() => {
+    if (!restoreJob || restoreJob.status === "completed" || restoreJob.status === "failed") return
+
+    const interval = setInterval(async () => {
+      try {
+        const updated = await getRestoreStatus(databaseId, restoreJob.backup_job_id)
+        setRestoreJob(updated)
+        if (updated.status === "completed") {
+          clearInterval(interval)
+          toast({ title: "Restore complete", description: "Database has been restored successfully." })
+        } else if (updated.status === "failed") {
+          clearInterval(interval)
+          toast({ title: "Restore failed", description: updated.error_message || "Failed to restore database.", variant: "destructive" })
+        }
+      } catch (error) {
+        console.error("Failed to poll restore status:", error)
+        clearInterval(interval)
+      }
+    }, 2000)
+
+    return () => clearInterval(interval)
+  }, [restoreJob?.status, restoreJob?.backup_job_id, databaseId])
 
   const fetchDatabaseDetails = async () => {
     try {
@@ -94,6 +145,58 @@ export function DatabaseDetailPage() {
 
   const handleDatabaseDeleted = () => {
     navigate("/dashboard")
+  }
+
+  const handleInitiateBackup = async () => {
+    if (!database) return
+    try {
+      setBackupLoading(true)
+      const job = await initiateBackup(database.database_id)
+      setBackupJob(job)
+      toast({ title: "Backup started", description: "Your database backup is being prepared. This may take a while." })
+    } catch (error: unknown) {
+      console.error("Failed to initiate backup:", error)
+      // If 409, a backup is already in progress - could try to get the status
+      if (error instanceof Error && error.message.includes("409")) {
+        toast({ title: "Backup in progress", description: "A backup is already running." })
+      } else {
+        toast({ title: "Backup failed", description: "Failed to start backup.", variant: "destructive" })
+      }
+    } finally {
+      setBackupLoading(false)
+    }
+  }
+
+  const handleDownloadBackup = async () => {
+    if (!database || !backupJob || backupJob.status !== "completed") return
+    try {
+      await downloadBackup(database.database_id, backupJob.backup_job_id, database.pg_database_name)
+      toast({ title: "Download started", description: "Your database dump is being downloaded." })
+    } catch (error) {
+      console.error("Failed to download backup:", error)
+      toast({ title: "Download failed", description: "Failed to download backup.", variant: "destructive" })
+    }
+  }
+
+  const handleRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!database) return
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    try {
+      setRestoreLoading(true)
+      const job = await restoreDatabase(database.database_id, file)
+      setRestoreJob(job)
+      toast({ title: "Restore started", description: "Your database is being restored. This may take a while." })
+    } catch (error) {
+      console.error("Failed to initiate restore:", error)
+      toast({ title: "Restore failed", description: "Failed to start restore.", variant: "destructive" })
+    } finally {
+      setRestoreLoading(false)
+      if (restoreInputRef.current) {
+        restoreInputRef.current.value = ""
+      }
+    }
   }
 
   const getStatusColor = (status: string) => {
@@ -184,10 +287,39 @@ export function DatabaseDetailPage() {
             <p className="text-muted-foreground mt-1">Database details and user management</p>
           </div>
         </div>
-        <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)}>
-          <Trash2 className="h-4 w-4 mr-2" />
-          Delete Database
-        </Button>
+        <div className="flex items-center gap-2">
+          <input
+            type="file"
+            ref={restoreInputRef}
+            onChange={handleRestore}
+            className="hidden"
+            accept=".dump,.tar,.custom"
+          />
+          {backupJob?.status === "completed" ? (
+            <Button variant="outline" onClick={handleDownloadBackup}>
+              <Download className="h-4 w-4 mr-2" />
+              Download Backup
+            </Button>
+          ) : backupJob?.status === "in_progress" || backupJob?.status === "pending" ? (
+            <Button variant="outline" disabled>
+              <Download className="h-4 w-4 mr-2 animate-spin" />
+              Backing up...
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={handleInitiateBackup} disabled={backupLoading || database.status !== "active"}>
+              <Download className="h-4 w-4 mr-2" />
+              {backupLoading ? "Starting..." : "Backup"}
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => restoreInputRef.current?.click()} disabled={restoreLoading || restoreJob?.status === "in_progress" || restoreJob?.status === "pending" || database.status !== "active"}>
+            <Upload className="h-4 w-4 mr-2" />
+            {restoreJob?.status === "in_progress" || restoreJob?.status === "pending" ? "Restoring..." : restoreLoading ? "Starting..." : "Restore"}
+          </Button>
+          <Button variant="destructive" onClick={() => setDeleteDialogOpen(true)}>
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete Database
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 mb-8">
@@ -205,7 +337,7 @@ export function DatabaseDetailPage() {
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-muted-foreground" />
               <span className="font-medium">Owner:</span>
-              <span>{database.owner_user_id}</span>
+              <span>{database.owner_email}</span>
             </div>
             <div className="flex items-center gap-2">
               <Calendar className="h-4 w-4 text-muted-foreground" />

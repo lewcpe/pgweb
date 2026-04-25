@@ -62,6 +62,7 @@ services:
       dockerfile: Dockerfile.playwright
     environment:
       CYPRESS_BASE_URL: "http://app:8080"
+      PG_HOST: "postgres"
     depends_on:
       app:
         condition: service_healthy

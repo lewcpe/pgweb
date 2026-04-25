@@ -7,11 +7,13 @@ import (
 	"pgweb-backend/store"
 	"database/sql"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -125,7 +127,7 @@ func ListDatabasesHandler(c *gin.Context) {
 	}
 
 	if databases == nil { // Ensure we return an empty list, not null
-        databases = []models.ManagedDatabase{}
+        databases = []models.DatabaseWithOwner{}
     }
 	c.JSON(http.StatusOK, databases)
 }
@@ -266,4 +268,358 @@ func DeleteDatabaseHandler(c *gin.Context) {
 
 	log.Printf("Database %s (ID: %s) soft-deleted by user %s", managedDB.PGDatabaseName, databaseID, currentUser.InternalUserID)
 	c.JSON(http.StatusOK, gin.H{"message": "Database soft-deleted successfully", "database": managedDB})
+}
+
+// InitiateBackupHandler starts an asynchronous backup job for a database.
+func InitiateBackupHandler(c *gin.Context) {
+	currentUser := auth.GetUserFromSession(c)
+	if currentUser == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	databaseIDStr := c.Param("database_id")
+	databaseID, err := uuid.Parse(databaseIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database ID format"})
+		return
+	}
+
+	// Verify ownership
+	managedDB, err := store.GetManagedDatabaseByID(databaseID, currentUser.InternalUserID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Database not found"})
+			return
+		}
+		log.Printf("Error fetching database %s for backup by user %s: %v", databaseID, currentUser.InternalUserID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve database"})
+		return
+	}
+
+	if managedDB.Status != "active" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Database must be active to backup"})
+		return
+	}
+
+	// Check if there's already any active job (backup or restore) for this database
+	if activeJob, found, err := store.HasActiveJobForDatabase(databaseID); err != nil {
+		log.Printf("Error checking active jobs for database %s: %v", databaseID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check for active jobs"})
+		return
+	} else if found {
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("A %s job is already in progress", activeJob.Type), "job": activeJob})
+		return
+	}
+
+	pgAdminDSN := os.Getenv("PG_ADMIN_DSN")
+	if pgAdminDSN == "" {
+		log.Println("Error: PG_ADMIN_DSN not set for InitiateBackupHandler")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database backup is not configured"})
+		return
+	}
+
+	backupDir := os.Getenv("BACKUP_DIR")
+	if backupDir == "" {
+		backupDir = "/tmp/pgweb-backups"
+	}
+
+	// Create backup job record
+	job := &models.BackupJob{
+		BackupJobID: uuid.New(),
+		DatabaseID:  databaseID,
+		Type:        "backup",
+		Status:      "pending",
+		FilePath:    "",
+		FileSize:    0,
+	}
+	if err := store.CreateBackupJob(job); err != nil {
+		log.Printf("Error creating backup job for database %s: %v", databaseID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create backup job"})
+		return
+	}
+
+	// Run pg_dump in background
+	go func(jobID uuid.UUID, dbName string) {
+		// Ensure backup directory exists
+		if err := os.MkdirAll(backupDir, 0755); err != nil {
+			log.Printf("Error creating backup directory %s: %v", backupDir, err)
+			store.UpdateBackupJobStatus(jobID, "failed", "", 0, "Failed to create backup directory")
+			return
+		}
+
+		filePath := fmt.Sprintf("%s/%s.dump", backupDir, jobID.String())
+
+		// Update status to in_progress
+		if err := store.UpdateBackupJobStatus(jobID, "in_progress", "", 0, ""); err != nil {
+			log.Printf("Error updating backup job %s status: %v", jobID, err)
+		}
+
+		log.Printf("Starting backup for database %s (job %s)", dbName, jobID)
+		fileSize, err := dbutils.DumpDatabaseToFile(pgAdminDSN, dbName, filePath)
+		if err != nil {
+			log.Printf("Error dumping database %s: %v", dbName, err)
+			store.UpdateBackupJobStatus(jobID, "failed", "", 0, err.Error())
+			return
+		}
+
+		if err := store.UpdateBackupJobStatus(jobID, "completed", filePath, fileSize, ""); err != nil {
+			log.Printf("Error updating backup job %s to completed: %v", jobID, err)
+		}
+		log.Printf("Backup completed for database %s (job %s, size %d bytes)", dbName, jobID, fileSize)
+	}(job.BackupJobID, managedDB.PGDatabaseName)
+
+	c.JSON(http.StatusAccepted, job)
+}
+
+// BackupStatusHandler returns the status of a backup job.
+func BackupStatusHandler(c *gin.Context) {
+	currentUser := auth.GetUserFromSession(c)
+	if currentUser == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	jobIDStr := c.Param("job_id")
+	jobID, err := uuid.Parse(jobIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid backup job ID format"})
+		return
+	}
+
+	job, err := store.GetBackupJobByID(jobID, currentUser.InternalUserID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Backup job not found"})
+			return
+		}
+		log.Printf("Error fetching backup job %s: %v", jobID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve backup job"})
+		return
+	}
+
+	c.JSON(http.StatusOK, job)
+}
+
+// DownloadBackupHandler serves the dump file for a completed backup job.
+func DownloadBackupHandler(c *gin.Context) {
+	currentUser := auth.GetUserFromSession(c)
+	if currentUser == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	jobIDStr := c.Param("job_id")
+	jobID, err := uuid.Parse(jobIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid backup job ID format"})
+		return
+	}
+
+	job, err := store.GetBackupJobByID(jobID, currentUser.InternalUserID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Backup job not found"})
+			return
+		}
+		log.Printf("Error fetching backup job %s for download: %v", jobID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve backup job"})
+		return
+	}
+
+	if job.Status != "completed" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Backup is not yet completed", "status": job.Status})
+		return
+	}
+
+	// Get the database name for the filename
+	managedDB, err := store.GetManagedDatabaseByID(job.DatabaseID, currentUser.InternalUserID)
+	if err != nil {
+		log.Printf("Error fetching database %s for backup download: %v", job.DatabaseID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve database info"})
+		return
+	}
+
+	filename := managedDB.PGDatabaseName + ".dump"
+	c.Header("Content-Disposition", "attachment; filename="+filename)
+	c.Header("Content-Length", fmt.Sprintf("%d", job.FileSize))
+	c.File(job.FilePath)
+
+	// Clean up backup file after a delay (allow time for re-downloads)
+	go func(path string) {
+		time.Sleep(1 * time.Hour)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: failed to clean up backup file %s: %v", path, err)
+		}
+	}(job.FilePath)
+}
+
+// InitiateRestoreHandler accepts a dump file upload and starts an async restore job.
+func InitiateRestoreHandler(c *gin.Context) {
+	currentUser := auth.GetUserFromSession(c)
+	if currentUser == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	databaseIDStr := c.Param("database_id")
+	databaseID, err := uuid.Parse(databaseIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database ID format"})
+		return
+	}
+
+	// Verify ownership
+	managedDB, err := store.GetManagedDatabaseByID(databaseID, currentUser.InternalUserID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Database not found"})
+			return
+		}
+		log.Printf("Error fetching database %s for restore by user %s: %v", databaseID, currentUser.InternalUserID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve database"})
+		return
+	}
+
+	if managedDB.Status != "active" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Database must be active to restore"})
+		return
+	}
+
+	// Check if there's already any active job (backup or restore) for this database
+	if activeJob, found, err := store.HasActiveJobForDatabase(databaseID); err != nil {
+		log.Printf("Error checking active jobs for database %s: %v", databaseID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check for active jobs"})
+		return
+	} else if found {
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("A %s job is already in progress", activeJob.Type), "job": activeJob})
+		return
+	}
+
+	pgAdminDSN := os.Getenv("PG_ADMIN_DSN")
+	if pgAdminDSN == "" {
+		log.Println("Error: PG_ADMIN_DSN not set for InitiateRestoreHandler")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database restore is not configured"})
+		return
+	}
+
+	backupDir := os.Getenv("BACKUP_DIR")
+	if backupDir == "" {
+		backupDir = "/tmp/pgweb-backups"
+	}
+
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		log.Printf("Error creating backup directory %s: %v", backupDir, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare restore"})
+		return
+	}
+
+	// Create job record first to get a unique ID for the temp file
+	job := &models.BackupJob{
+		BackupJobID: uuid.New(),
+		DatabaseID:  databaseID,
+		Type:        "restore",
+		Status:      "pending",
+		FilePath:    "",
+		FileSize:    0,
+	}
+	if err := store.CreateBackupJob(job); err != nil {
+		log.Printf("Error creating restore job for database %s: %v", databaseID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create restore job"})
+		return
+	}
+
+	// Stream upload directly to disk instead of buffering in memory
+	uploadPath := fmt.Sprintf("%s/%s-upload.dump", backupDir, job.BackupJobID.String())
+	outFile, err := os.Create(uploadPath)
+	if err != nil {
+		log.Printf("Error creating dump file for job %s: %v", job.BackupJobID, err)
+		store.UpdateBackupJobStatus(job.BackupJobID, "failed", "", 0, "Failed to create dump file")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save uploaded file"})
+		return
+	}
+
+	written, err := io.Copy(outFile, c.Request.Body)
+	outFile.Close()
+	if err != nil {
+		log.Printf("Error streaming upload to disk for job %s: %v", job.BackupJobID, err)
+		os.Remove(uploadPath)
+		store.UpdateBackupJobStatus(job.BackupJobID, "failed", "", 0, "Failed to save uploaded file")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save uploaded file"})
+		return
+	}
+
+	if written == 0 {
+		os.Remove(uploadPath)
+		store.UpdateBackupJobStatus(job.BackupJobID, "failed", "", 0, "Empty upload")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Empty upload data"})
+		return
+	}
+
+	// Update job with file path and size
+	store.UpdateBackupJobStatus(job.BackupJobID, "pending", uploadPath, written, "")
+
+	// Run pg_restore in background
+	go func(jobID uuid.UUID, dbName string, uploadPath string) {
+		// Clean up upload file when done
+		defer func() {
+			if err := os.Remove(uploadPath); err != nil && !os.IsNotExist(err) {
+				log.Printf("Warning: failed to clean up restore upload %s: %v", uploadPath, err)
+			}
+		}()
+
+		// Update status to in_progress
+		if err := store.UpdateBackupJobStatus(jobID, "in_progress", uploadPath, 0, ""); err != nil {
+			log.Printf("Error updating restore job %s status: %v", jobID, err)
+		}
+
+		log.Printf("Starting restore for database %s (job %s)", dbName, jobID)
+		err := dbutils.RestoreDatabaseFromFile(pgAdminDSN, dbName, uploadPath)
+		if err != nil {
+			log.Printf("Error restoring database %s: %v", dbName, err)
+			store.UpdateBackupJobStatus(jobID, "failed", uploadPath, 0, err.Error())
+			return
+		}
+
+		info, _ := os.Stat(uploadPath)
+		var fileSize int64
+		if info != nil {
+			fileSize = info.Size()
+		}
+		if err := store.UpdateBackupJobStatus(jobID, "completed", uploadPath, fileSize, ""); err != nil {
+			log.Printf("Error updating restore job %s to completed: %v", jobID, err)
+		}
+		log.Printf("Restore completed for database %s (job %s)", dbName, jobID)
+	}(job.BackupJobID, managedDB.PGDatabaseName, uploadPath)
+
+	c.JSON(http.StatusAccepted, job)
+}
+
+// RestoreStatusHandler returns the status of a restore job.
+func RestoreStatusHandler(c *gin.Context) {
+	currentUser := auth.GetUserFromSession(c)
+	if currentUser == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	jobIDStr := c.Param("job_id")
+	jobID, err := uuid.Parse(jobIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid restore job ID format"})
+		return
+	}
+
+	job, err := store.GetBackupJobByID(jobID, currentUser.InternalUserID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Restore job not found"})
+			return
+		}
+		log.Printf("Error fetching restore job %s: %v", jobID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve restore job"})
+		return
+	}
+
+	c.JSON(http.StatusOK, job)
 }

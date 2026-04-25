@@ -37,4 +37,4 @@ screenshots/
 videos/
 tmp/main
 backend/tmp/main
-.next/
+.next/test-results/
