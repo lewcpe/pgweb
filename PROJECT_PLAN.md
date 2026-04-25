@@ -3,7 +3,7 @@
 **Version:** 1.0
 **Date:** 2025-06-17
 
-**Objective:** To develop a Go backend and Svelte/TypeScript frontend application that enables OIDC-authenticated users to provision and manage their own isolated PostgreSQL databases (with pgvector enabled by default) within a shared PostgreSQL instance. Users can create multiple databases and, for each database, create multiple PostgreSQL users with 'read' or 'write' permissions. The development and testing environment will be managed via Docker Compose, including Dex for OIDC.
+**Objective:** To develop a Go backend and React/TypeScript frontend application that enables OIDC-authenticated users to provision and manage their own isolated PostgreSQL databases (with pgvector enabled by default) within a shared PostgreSQL instance. Users can create multiple databases and, for each database, create multiple PostgreSQL users with 'read' or 'write' permissions. The development and testing environment will be managed via Docker Compose, including Dex for OIDC.
 
 ### 1. System Architecture Overview
 
@@ -11,7 +11,7 @@ The system comprises a frontend application, a backend API, a shared PostgreSQL 
 
 ```mermaid
 graph TD
-    User[End User] -- Interacts via Browser --> Frontend[Frontend (Vite/Svelte/TS)]
+    User[End User] -- Interacts via Browser --> Frontend[Frontend (Vite/React/TS)]
     Frontend -- API Calls --> Backend[Backend API (Go/Gin)]
     Backend -- OIDC Auth Flow --> Dex[OIDC Provider (Dex)]
     Backend -- Manages Users/DBs --> AppDB[(Application DB - within Backend or separate)]
@@ -31,7 +31,7 @@ graph TD
     end
 ```
 
-*   **Frontend (Vite/Svelte/TypeScript with Shadcn-Svelte):** Provides the user interface for authentication, database management, and PostgreSQL user management.
+*   **Frontend (Vite/React/TypeScript with shadcn/ui):** Provides the user interface for authentication, database management, and PostgreSQL user management.
 *   **Backend API (Go/Gin):** Handles business logic, OIDC authentication, interaction with the shared PostgreSQL instance for provisioning, and manages application-specific metadata.
 *   **Application DB:** Stores metadata about application users, their managed databases, and associated PostgreSQL users. This could be a separate schema within the shared PostgreSQL instance or a dedicated database. For simplicity, we'll assume it's a schema/tables managed by the backend within the shared instance initially.
 *   **Shared PostgreSQL Instance:** The central PostgreSQL server where user-specific databases are created. The `pgvector` extension will be enabled by default in each user-created database.

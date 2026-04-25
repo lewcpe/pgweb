@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-This project provides a self-service platform for users to provision and manage their own isolated PostgreSQL databases. It features a Go backend API and a Svelte/TypeScript frontend. Users authenticate via OIDC (using Dex in the development environment) and can create databases, manage PostgreSQL users within those databases (with 'read' or 'write' permissions), and enable the `pgvector` extension by default for each created database.
+This project provides a self-service platform for users to provision and manage their own isolated PostgreSQL databases. It features a Go backend API and a React/TypeScript frontend. Users authenticate via OIDC (using Dex in the development environment) and can create databases, manage PostgreSQL users within those databases (with 'read' or 'write' permissions), and enable the `pgvector` extension by default for each created database.
 
 The system is designed to be run using Docker Compose, which orchestrates the frontend, backend, PostgreSQL instance, and Dex for OIDC.
 
@@ -20,11 +20,11 @@ The system is designed to be run using Docker Compose, which orchestrates the fr
 ## 3. Tech Stack
 
 *   **Backend:** Go (Gin framework)
-*   **Frontend:** Svelte, TypeScript, Vite, Shadcn-Svelte
+*   **Frontend:** React, TypeScript, Vite, shadcn/ui
 *   **Database:** PostgreSQL with `pgvector` extension
 *   **Authentication:** OIDC (Dex for development/testing)
 *   **Containerization:** Docker, Docker Compose
-*   **Testing:** Cypress (for E2E tests on the API)
+*   **Testing:** Playwright (for E2E tests on the API)
 
 ## 4. API Endpoints
 
@@ -84,7 +84,7 @@ To run the application suite (frontend, backend, PostgreSQL, Dex), use Docker Co
 
 ## 6. Testing
 
-The project includes end-to-end tests for the backend API using Cypress. These tests are defined in the `tests/cypress` directory and can be run in a Dockerized environment using `compose.test.yml`.
+The project includes end-to-end tests for the backend API using Playwright. These tests are defined in the `tests/playwright` directory and can be run in a Dockerized environment using `compose.test.yml`.
 
 1.  **Prerequisites:**
     *   Docker installed and running.
@@ -97,25 +97,20 @@ The project includes end-to-end tests for the backend API using Cypress. These t
 3.  **Running Tests:**
     Navigate to the project root directory and run:
     ```bash
-    docker compose -f compose.test.yml up --build
+    docker compose -f compose.test.yml --profile e2e-tests up --build
     ```
     This command will:
     *   Build images if necessary.
     *   Start `postgres`, `dex`, and `backend` services configured for testing.
-    *   Run the Cypress tests in the `cypress` service. Test results will be output to the console.
+    *   Run the Playwright tests in the `playwright-tests` service. Test results will be output to the console.
     *   The services will typically shut down after the tests complete.
 
-    To run tests again without rebuilding (if no code changes):
-    ```bash
-    docker compose -f compose.test.yml up cypress
-    ```
-
-    To run Cypress in interactive mode (ensure other services from `compose.test.yml` are running, e.g., `docker compose -f compose.test.yml up -d backend`):
+    To run Playwright in interactive mode (ensure other services from `compose.test.yml` are running, e.g., `docker compose -f compose.test.yml up -d app`):
     ```bash
     cd tests
-    npx cypress open --config-file cypress.config.js
+    npx playwright test --ui
     ```
-    *(Note: Ensure the `CYPRESS_BASE_URL` in `compose.test.yml` or your local Cypress config points to the correct backend URL for testing, typically `http://backend:8080` when run via compose, or `http://localhost:8080` if backend is run directly on host for local Cypress development).*
+    *(Note: Ensure the Playwright config's `baseURL` in `compose.test.yml` or your local config points to the correct backend URL for testing, typically `http://app:8080` when run via compose, or `http://localhost:8080` if backend is run directly on host for local Playwright development).*
 
 ### Backend Go Tests
 
@@ -138,14 +133,12 @@ PG_ADMIN_DSN="postgres://test_admin:test_password@localhost:5432/test_admin_db?s
 .
 ├── .github/workflows/    # GitHub Actions workflows (CI, Docker builds)
 ├── backend/              # Go backend source code
-│   ├── Dockerfile        # Dockerfile for backend
 │   ├── API.md            # Detailed API documentation
 │   └── ...
-├── frontend/             # Svelte/TS frontend source code
-│   ├── Dockerfile        # Dockerfile for frontend
+├── frontend/             # React/TS frontend source code
 │   └── ...
-├── tests/                # Cypress E2E tests
-│   └── cypress/
+├── tests/                # Playwright E2E tests
+│   └── playwright/
 ├── compose.test.yml      # Docker Compose for running tests
 ├── dex_config.yml        # Dex OIDC provider configuration (user provided)
 ├── dex_config.test.yml   # Dex OIDC provider configuration for tests

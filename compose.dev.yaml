@@ -27,7 +27,7 @@ services:
       PG_ADMIN_DSN: "postgres://dev_admin:dev_password@postgres:5432/dev_admin_db?sslmode=disable"
       APP_DB_DSN: "postgres://dev_admin:dev_password@postgres:5432/dev_admin_db?sslmode=disable"
       GIN_MODE: "debug"
-      SESSION_SECRET_KEY: "dev-session-secret"
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:-dev-session-secret}
       PGWEB_TRUSTED_HEADER: "X-Forwarded-Email"
     ports:
       - "8080:8080"

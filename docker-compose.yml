@@ -31,12 +31,13 @@ services:
     ports:
       - "8080:8080"
     environment:
-      PG_ADMIN_DSN: "postgres://admin_user:admin_password@postgres:5432/admin_db?sslmode=disable"
-      APP_DB_DSN: "postgres://admin_user:admin_password@postgres:5432/admin_db?sslmode=disable"
-      PGWEB_TRUSTED_HEADER: "X-Forwarded-Email"
-      GIN_MODE: "debug"
-      SESSION_SECRET_KEY: "local-session-secret"
+      PG_ADMIN_DSN: ${PG_ADMIN_DSN:-postgres://admin_user:admin_password@postgres:5432/admin_db?sslmode=disable}
+      APP_DB_DSN: ${APP_DB_DSN:-postgres://admin_user:admin_password@postgres:5432/admin_db?sslmode=disable}
+      PGWEB_TRUSTED_HEADER: ${PGWEB_TRUSTED_HEADER:-X-Forwarded-Email}
+      GIN_MODE: ${GIN_MODE:-debug}
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:?SESSION_SECRET_KEY is required - see .env.example}
       FRONTEND_DIST: "/app/frontend/dist"
+      BACKUP_DIR: ${BACKUP_DIR:-/tmp/pgweb-backups}
     depends_on:
       - postgres
       - dex
